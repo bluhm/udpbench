@@ -14,16 +14,30 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include <err.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 static void __dead
 usage(void)
 {
-	fprintf(stderr, "usage: udpperf local|remote send|receive\n");
+	fprintf(stderr, "usage: udpperf local|remote send|recv\n");
 	exit(2);
 }
+
+enum direction {
+    DIR_NONE,
+    DIR_SEND,
+    DIR_RECV,
+} dir;
+
+enum mode {
+    MOD_NONE,
+    MOD_LOCAL,
+    MOD_REMOTE,
+} mod;
 
 int
 main(int argc, char *argv[])
@@ -40,9 +54,21 @@ main(int argc, char *argv[])
 	argv += optind;
 
 	if (argc != 2)
-		usage();
+		errx(1, "no mode and direction");
 
-	
+	if (strcmp(argv[1], "local") == 0)
+		mod = MOD_LOCAL;
+	else if (strcmp(argv[1], "remote") == 0)
+		mod = MOD_REMOTE;
+	else
+		errx(1, "unknown mode: %s", argv[1]);
+
+	if (strcmp(argv[2], "send") == 0)
+		dir = DIR_SEND;
+	else if (strcmp(argv[2], "recv") == 0)
+		dir = DIR_RECV;
+	else
+		errx(1, "unknown direction: %s", argv[2]);
 
 	return 0;
 }
