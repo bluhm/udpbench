@@ -47,10 +47,11 @@ void alarm_handler(int);
 static void __dead
 usage(void)
 {
-	fprintf(stderr, "usage: udpperf [-b bufsize] [-l length] "
+	fprintf(stderr, "usage: udpperf [-b bufsize] [-l length] [-t timeout] "
 	    "local|remote send|recv\n"
 	    "    -b bufsize     set size of send or receive buffer\n"
 	    "    -l length      set length of udp payload\n"
+	    "    -t timeout     send duration or receive timeout, default 1\n"
 	    );
 	exit(2);
 }
@@ -74,21 +75,26 @@ main(int argc, char *argv[])
 {
 	struct sigaction act;
 	const char *errstr;
-	int buffer_size;
-	int ch;
+	int ch, buffer_size, timeout = 1;
 
-	while ((ch = getopt(argc, argv, "b:l:")) != -1) {
+	while ((ch = getopt(argc, argv, "b:l:t:")) != -1) {
 		switch (ch) {
 		case 'b':
-			buffer_size = strtonum(optarg, 1, INT_MAX, &errstr);
+			buffer_size = strtonum(optarg, 0, INT_MAX, &errstr);
 			if (errstr != NULL)
 				errx(1, "buffer size is %s: %s", errstr,
 				    optarg);
 			break;
 		case 'l':
-			udp_length = strtonum(optarg, 1, IP_MAXPACKET, &errstr);
+			udp_length = strtonum(optarg, 0, IP_MAXPACKET, &errstr);
 			if (errstr != NULL)
 				errx(1, "payload length is %s: %s", errstr,
+				    optarg);
+			break;
+		case 't':
+			timeout = strtonum(optarg, 0, INT_MAX, &errstr);
+			if (errstr != NULL)
+				errx(1, "timeout is %s: %s", errstr,
 				    optarg);
 			break;
 		default:
@@ -128,7 +134,8 @@ main(int argc, char *argv[])
 		arc4random_buf(udp_payload, udp_length);
 		udp_connect("127.0.0.1", "12345");
 		udp_buffersize(buffer_size);
-		alarm(1);
+		if (timeout > 0)
+			alarm(timeout);
 		udp_send();
 	}
 
@@ -192,17 +199,7 @@ udp_buffersize(int size)
 	if (size == 0)
 		return;
 
-	switch (dir) {
-	case DIR_SEND:
-		name = SO_SNDBUF;
-		break;
-	case DIR_RECV:
-		name = SO_RCVBUF;
-		break;
-	default:
-		errx(1, "direction %d", dir);
-	}
-
+	name = (dir == DIR_SEND) ? SO_SNDBUF : SO_RCVBUF;
 	len = sizeof(size);
 	if (setsockopt(udp_socket, SOL_SOCKET, name, &size, len) == -1)
 		err(1, "setsockopt buffer size %d", size);
@@ -230,18 +227,9 @@ udp_send(void)
 	if (gettimeofday(&end, NULL) == -1)
 		err(1, "gettimeofday end");
 
-	switch(address_family) {
-	case AF_INET:
-		length = sizeof(struct ip) + sizeof(struct udphdr) +
-		    udp_length;
-		break;
-	case AF_INET6:
-		length = sizeof(struct ip6_hdr) + sizeof(struct udphdr) +
-		    udp_length;
-		break;
-	default:
-		errx(1, "address family %d", address_family);
-	}
+	length = (address_family == AF_INET) ?
+	    sizeof(struct ip) : sizeof(struct ip6_hdr);
+	length += sizeof(struct udphdr) + udp_length;
 	timersub(&end, &begin, &duration);
 	bits = (double)count * length;
 	bits /= (double)duration.tv_sec + duration.tv_usec / 1000000.;
