@@ -303,9 +303,10 @@ udp_send(const char *payload, size_t udplen)
 void
 udp_receive(char *payload, size_t udplen)
 {
-	struct timeval begin, idle, end, duration;
-	unsigned long count, syscall, wouldblock,  bored;
+	struct timeval begin, idle, end, duration, timeo;
+	unsigned long count, syscall, bored;
 	size_t length;
+	socklen_t len;
 	double bits;
 
 	/* wait for the first packet to start timing */
@@ -316,19 +317,25 @@ udp_receive(char *payload, size_t udplen)
 		err(1, "gettimeofday begin");
 	timerclear(&idle);
 
+	timeo.tv_sec = 0;
+	timeo.tv_usec = 100000;
+	len = sizeof(timeo);
+	if (setsockopt(udp_socket, SOL_SOCKET, SO_RCVTIMEO, &timeo, len) == -1)
+		err(1, "setsockopt recv timeout");
+
 	count = 1;
 	syscall = 1;
-	wouldblock = 0;
 	bored = 0;
 	while (!alarm_signaled) {
 		syscall++;
-		if (recv(udp_socket, payload, udplen, MSG_DONTWAIT) == -1) {
+		if (recv(udp_socket, payload, udplen, 0) == -1) {
 			if (errno == EWOULDBLOCK) {
-				wouldblock++;
 				bored++;
-				if (bored == 100) {
+				if (bored == 1) {
 					if (gettimeofday(&idle, NULL) == -1)
 						err(1, "gettimeofday idle");
+					/* packet was seen before timeout */
+					timersub(&idle, &timeo, &idle);
 				}
 				continue;
 			}
@@ -353,6 +360,6 @@ udp_receive(char *payload, size_t udplen)
 	bits /= (double)duration.tv_sec + duration.tv_usec / 1000000.;
 	printf("recv: count %lu, length %zu, duration %lld.%06ld, bit/s %g\n",
 	    count, length, duration.tv_sec, duration.tv_usec, bits);
-	printf("syscall %lu, wouldblock %lu, bored %lu, idle %lld.%06ld\n",
-	    syscall, wouldblock, bored, idle.tv_sec, idle.tv_usec);
+	printf("syscall %lu, bored %lu, idle %lld.%06ld\n",
+	    syscall, bored, idle.tv_sec, idle.tv_usec);
 }
