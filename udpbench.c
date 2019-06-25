@@ -24,6 +24,7 @@
 
 #include <err.h>
 #include <errno.h>
+#include <limits.h>
 #include <netdb.h>
 #include <signal.h>
 #include <stdio.h>
@@ -38,6 +39,7 @@ int udp_socket = -1;
 size_t udp_length;
 char *udp_payload;
 
+void udp_buffersize(int);
 void udp_connect(const char *, const char *);
 void udp_send(void);
 void alarm_handler(int);
@@ -45,7 +47,9 @@ void alarm_handler(int);
 static void __dead
 usage(void)
 {
-	fprintf(stderr, "usage: udpperf [-l length] local|remote send|recv\n"
+	fprintf(stderr, "usage: udpperf [-b bufsize] [-l length] "
+	    "local|remote send|recv\n"
+	    "    -b bufsize     set size of send or receive buffer\n"
 	    "    -l length      set length of udp payload\n"
 	    );
 	exit(2);
@@ -70,10 +74,17 @@ main(int argc, char *argv[])
 {
 	struct sigaction act;
 	const char *errstr;
+	int buffer_size;
 	int ch;
 
-	while ((ch = getopt(argc, argv, "l:")) != -1) {
+	while ((ch = getopt(argc, argv, "b:l:")) != -1) {
 		switch (ch) {
+		case 'b':
+			buffer_size = strtonum(optarg, 1, INT_MAX, &errstr);
+			if (errstr != NULL)
+				errx(1, "buffer size is %s: %s", errstr,
+				    optarg);
+			break;
 		case 'l':
 			udp_length = strtonum(optarg, 1, IP_MAXPACKET, &errstr);
 			if (errstr != NULL)
@@ -116,6 +127,7 @@ main(int argc, char *argv[])
 			err(1, "malloc udp payload");
 		arc4random_buf(udp_payload, udp_length);
 		udp_connect("127.0.0.1", "12345");
+		udp_buffersize(buffer_size);
 		alarm(1);
 		udp_send();
 	}
@@ -168,6 +180,33 @@ udp_connect(const char *host, const char *port)
 		err(1, "%s", cause);
 	address_family = res->ai_family;
 	freeaddrinfo(res0);
+}
+
+void
+udp_buffersize(int size)
+{
+	socklen_t len;
+	int name;
+
+	/* use default */
+	if (size == 0)
+		return;
+
+	switch (dir) {
+	case DIR_SEND:
+		name = SO_SNDBUF;
+		break;
+	case DIR_RECV:
+		name = SO_RCVBUF;
+		break;
+	default:
+		errx(1, "direction %d", dir);
+	}
+
+	len = sizeof(size);
+	if (setsockopt(udp_socket, SOL_SOCKET, name, &size, len) == -1)
+		err(1, "setsockopt buffer size %d", size);
+
 }
 
 void
