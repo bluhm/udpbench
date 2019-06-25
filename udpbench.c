@@ -82,6 +82,8 @@ main(int argc, char *argv[])
 	int ch, buffer_size = 0, timeout = 1;
 	const char *host = NULL, *port = "12345";
 
+	pledge("stdio dns inet", NULL);
+
 	while ((ch = getopt(argc, argv, "b:l:p:t:")) != -1) {
 		switch (ch) {
 		case 'b':
