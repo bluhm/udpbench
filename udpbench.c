@@ -308,11 +308,13 @@ udp_receive(char *payload, size_t udplen)
 	struct timeval begin, idle, end, duration, timeo;
 	unsigned long count, syscall, bored;
 	size_t length;
+	ssize_t rcvlen;
 	socklen_t len;
 	double bits;
 
 	/* wait for the first packet to start timing */
-	if (recv(udp_socket, payload, udplen, 0) == -1)
+	rcvlen = recv(udp_socket, payload, udplen, 0);
+	if (rcvlen == -1)
 		err(1, "recv 1");
 
 	if (gettimeofday(&begin, NULL) == -1)
@@ -354,7 +356,7 @@ udp_receive(char *payload, size_t udplen)
 
 	length = (address_family == AF_INET) ?
 	    sizeof(struct ip) : sizeof(struct ip6_hdr);
-	length += sizeof(struct udphdr) + udplen;
+	length += sizeof(struct udphdr) + rcvlen;
 	if (timerisset(&idle)) {
 		timersub(&idle, &begin, &duration);
 		timersub(&end, &idle, &idle);
