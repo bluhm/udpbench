@@ -36,21 +36,21 @@ sig_atomic_t alarm_signaled;
 
 int address_family;
 int udp_socket = -1;
-size_t udp_length;
-char *udp_payload;
 
 void udp_buffersize(int);
 void udp_connect(const char *, const char *);
-void udp_send(void);
+void udp_send(const char *, size_t);
 void alarm_handler(int);
 
 static void __dead
 usage(void)
 {
-	fprintf(stderr, "usage: udpperf [-b bufsize] [-l length] [-t timeout] "
-	    "local|remote send|recv\n"
+	fprintf(stderr, "usage: udpperf [-b bufsize] [-l length] [-p port] "
+	    "[-t timeout] "
+	    "local|remote send|recv [hostname]\n"
 	    "    -b bufsize     set size of send or receive buffer\n"
 	    "    -l length      set length of udp payload\n"
+	    "    -p port        udp port for bind or connect, default 12345\n"
 	    "    -t timeout     send duration or receive timeout, default 1\n"
 	    );
 	exit(2);
@@ -75,9 +75,12 @@ main(int argc, char *argv[])
 {
 	struct sigaction act;
 	const char *errstr;
-	int ch, buffer_size, timeout = 1;
+	char *udp_payload;
+	size_t udp_length = 0;
+	int ch, buffer_size = 0, timeout = 1;
+	const char *host = NULL, *port = "12345";
 
-	while ((ch = getopt(argc, argv, "b:l:t:")) != -1) {
+	while ((ch = getopt(argc, argv, "b:l:p:t:")) != -1) {
 		switch (ch) {
 		case 'b':
 			buffer_size = strtonum(optarg, 0, INT_MAX, &errstr);
@@ -90,6 +93,9 @@ main(int argc, char *argv[])
 			if (errstr != NULL)
 				errx(1, "payload length is %s: %s", errstr,
 				    optarg);
+			break;
+		case 'p':
+			port = optarg;
 			break;
 		case 't':
 			timeout = strtonum(optarg, 0, INT_MAX, &errstr);
@@ -104,7 +110,9 @@ main(int argc, char *argv[])
 	argc -= optind;
 	argv += optind;
 
-	if (argc != 2)
+	if (argc > 3)
+		usage();
+	if (argc < 2)
 		errx(1, "no mode and direction");
 
 	if (strcmp(argv[0], "local") == 0)
@@ -121,6 +129,11 @@ main(int argc, char *argv[])
 	else
 		errx(1, "unknown direction: %s", argv[2]);
 
+	if (dir == DIR_SEND && argc < 3)
+		errx(1, "no hostname");
+	if (argc >= 3)
+		host = argv[2];
+
 	memset(&act, 0, sizeof(act));
 	act.sa_handler = alarm_handler;
 	act.sa_flags = SA_RESETHAND;
@@ -132,11 +145,11 @@ main(int argc, char *argv[])
 		if (udp_payload == NULL)
 			err(1, "malloc udp payload");
 		arc4random_buf(udp_payload, udp_length);
-		udp_connect("127.0.0.1", "12345");
+		udp_connect(host, port);
 		udp_buffersize(buffer_size);
 		if (timeout > 0)
 			alarm(timeout);
-		udp_send();
+		udp_send(udp_payload, udp_length);
 	}
 
 	return 0;
@@ -207,7 +220,7 @@ udp_buffersize(int size)
 }
 
 void
-udp_send(void)
+udp_send(const char *payload, size_t udplen)
 {
 	struct timeval begin, end, duration;
 	unsigned long count;
@@ -219,7 +232,7 @@ udp_send(void)
 
 	count = 0;
 	while (!alarm_signaled) {
-		if (send(udp_socket, udp_payload, udp_length, 0) == -1)
+		if (send(udp_socket, payload, udplen, 0) == -1)
 			err(1, "send");
 		count++;
 	}
@@ -229,7 +242,7 @@ udp_send(void)
 
 	length = (address_family == AF_INET) ?
 	    sizeof(struct ip) : sizeof(struct ip6_hdr);
-	length += sizeof(struct udphdr) + udp_length;
+	length += sizeof(struct udphdr) + udplen;
 	timersub(&end, &begin, &duration);
 	bits = (double)count * length;
 	bits /= (double)duration.tv_sec + duration.tv_usec / 1000000.;
