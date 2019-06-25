@@ -38,8 +38,10 @@ int address_family;
 int udp_socket = -1;
 
 void udp_buffersize(int);
+void udp_bind(const char *, const char *);
 void udp_connect(const char *, const char *);
 void udp_send(const char *, size_t);
+void udp_receive(char *, size_t);
 void alarm_handler(int);
 
 static void __dead
@@ -140,16 +142,22 @@ main(int argc, char *argv[])
 	if (sigaction(SIGALRM, &act, NULL) == -1)
 		err(1, "sigaction");
 
+	udp_payload = malloc(udp_length);
+	if (udp_payload == NULL)
+		err(1, "malloc udp payload");
 	if (dir == DIR_SEND) {
-		udp_payload = malloc(udp_length);
-		if (udp_payload == NULL)
-			err(1, "malloc udp payload");
 		arc4random_buf(udp_payload, udp_length);
 		udp_connect(host, port);
 		udp_buffersize(buffer_size);
 		if (timeout > 0)
 			alarm(timeout);
 		udp_send(udp_payload, udp_length);
+	} else {
+		udp_bind(host, port);
+		udp_buffersize(buffer_size);
+		if (timeout > 0)
+			alarm(timeout);
+		udp_receive(udp_payload, udp_length);
 	}
 
 	return 0;
@@ -159,6 +167,48 @@ void
 alarm_handler(int sig)
 {
 	alarm_signaled = 1;
+}
+
+void
+udp_bind(const char *host, const char *port)
+{
+	struct addrinfo hints, *res, *res0;
+	int error;
+	int save_errno;
+	const char *cause = NULL;
+
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_DGRAM;
+	hints.ai_protocol = 17;
+	hints.ai_flags = AI_PASSIVE;
+	error = getaddrinfo(host, port, &hints, &res0);
+	if (error)
+		errx(1, "getaddrinfo: %s", gai_strerror(error));
+	udp_socket = -1;
+	for (res = res0; res; res = res->ai_next) {
+		udp_socket = socket(res->ai_family, res->ai_socktype,
+		    res->ai_protocol);
+		if (udp_socket == -1) {
+			cause = "socket";
+			continue;
+		}
+
+		if (bind(udp_socket, res->ai_addr, res->ai_addrlen) == -1) {
+			cause = "bind";
+			save_errno = errno;
+			close(udp_socket);
+			errno = save_errno;
+			udp_socket = -1;
+			continue;
+		}
+
+		break;  /* okay we got one */
+	}
+	if (udp_socket == -1)
+		err(1, "%s", cause);
+	address_family = res->ai_family;
+	freeaddrinfo(res0);
 }
 
 void
@@ -247,5 +297,43 @@ udp_send(const char *payload, size_t udplen)
 	bits = (double)count * length;
 	bits /= (double)duration.tv_sec + duration.tv_usec / 1000000.;
 	printf("send: count %lu, length %zu, duration %lld.%06ld, bit/s %g\n",
+	    count, length, duration.tv_sec, duration.tv_usec, bits);
+}
+
+void
+udp_receive(char *payload, size_t udplen)
+{
+	struct timeval begin, end, duration;
+	unsigned long count;
+	size_t length;
+	double bits;
+
+	/* wait for the first packet to start timing */
+	count = 0;
+	if (recv(udp_socket, payload, udplen, 0) == -1)
+		err(1, "recv 1");
+
+	if (gettimeofday(&begin, NULL) == -1)
+		err(1, "gettimeofday begin");
+
+	while (!alarm_signaled) {
+		if (recv(udp_socket, payload, udplen, MSG_DONTWAIT) == -1) {
+			if (errno == EWOULDBLOCK)
+				continue;
+			err(1, "recv");
+		}
+		count++;
+	}
+
+	if (gettimeofday(&end, NULL) == -1)
+		err(1, "gettimeofday end");
+
+	length = (address_family == AF_INET) ?
+	    sizeof(struct ip) : sizeof(struct ip6_hdr);
+	length += sizeof(struct udphdr) + udplen;
+	timersub(&end, &begin, &duration);
+	bits = (double)count * length;
+	bits /= (double)duration.tv_sec + duration.tv_usec / 1000000.;
+	printf("recv: count %lu, length %zu, duration %lld.%06ld, bit/s %g\n",
 	    count, length, duration.tv_sec, duration.tv_usec, bits);
 }
