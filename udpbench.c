@@ -371,8 +371,8 @@ udp_send(const char *payload, size_t udplen)
 	bits = (double)packet * length;
 	bits /= (double)duration.tv_sec + duration.tv_usec / 1000000.;
 	printf("send: syscall %lu, packet %lu, length %zu, "
-	    "duration %lld.%06ld, bit/s %g\n",
-	    syscall, packet, length, duration.tv_sec, duration.tv_usec, bits);
+	    "duration %lld.%06ld, bit/s %g\n", syscall, packet, length,
+	    (long long)duration.tv_sec, duration.tv_usec, bits);
 }
 
 void
@@ -443,11 +443,11 @@ udp_receive(char *payload, size_t udplen)
 	bits = (double)packet * length;
 	bits /= (double)duration.tv_sec + duration.tv_usec / 1000000.;
 	printf("recv: syscall %lu, packet %lu, length %zu, "
-	    "duration %lld.%06ld, bit/s %g\n",
-	    syscall, packet, length, duration.tv_sec, duration.tv_usec, bits);
+	    "duration %lld.%06ld, bit/s %g\n", syscall, packet, length,
+	    (long long)duration.tv_sec, duration.tv_usec, bits);
 	if (idle.tv_sec < 1)
 		errx(1, "not enough idle time: %lld.%06ld",
-		    idle.tv_sec, idle.tv_usec);
+		    (long long)idle.tv_sec, idle.tv_usec);
 }
 
 void
