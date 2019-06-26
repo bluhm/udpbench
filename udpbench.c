@@ -35,20 +35,22 @@
 
 sig_atomic_t alarm_signaled;
 
-int address_family;
+int udp_family;
 int udp_socket = -1;
-int ssh_fd = -1;
+FILE *ssh_stream;
 pid_t ssh_pid;
 
 void alarm_handler(int);
-void udp_buffersize(int);
 void udp_bind(const char *, const char *);
 void udp_connect(const char *, const char *);
+void udp_getsockname(char **, char **);
+void udp_buffersize(int);
 void udp_send(const char *, size_t);
 void udp_receive(char *, size_t);
-void ssh_bind(const char *, const char *, int, size_t , const char *, int,
-    const char *);
+void ssh_bind(const char *, const char *, const char *, const char *,
+    int, size_t , int);
 void ssh_pipe(char **);
+void ssh_getpeername(char **, char **);
 void ssh_wait(void);
 
 static void __dead
@@ -89,10 +91,14 @@ main(int argc, char *argv[])
 	size_t udp_length = 0;
 	int ch, buffer_size = 0, timeout = 1;
 	const char *progname = argv[0];
-	const char *hostname = NULL, *port = "12345", *remotessh = NULL;
+	char *hostname = NULL, *service = "12345", *remotessh = NULL;
+	char *localaddr, *localport;
 
 	if (pledge("stdio dns inet proc exec", NULL) == -1)
 		err(1, "pledge");
+
+	if (setvbuf(stdout, NULL, _IOLBF, 0) != 0)
+		err(1, "setvbuf");
 
 	while ((ch = getopt(argc, argv, "b:l:p:s:t:")) != -1) {
 		switch (ch) {
@@ -109,7 +115,7 @@ main(int argc, char *argv[])
 				    optarg);
 			break;
 		case 'p':
-			port = optarg;
+			service = optarg;
 			break;
 		case 's':
 			remotessh = optarg;
@@ -169,13 +175,14 @@ main(int argc, char *argv[])
 	if (dir == DIR_SEND) {
 		arc4random_buf(udp_payload, udp_length);
 		if (remotessh != NULL) {
-			ssh_bind(remotessh, progname, buffer_size,
-			    udp_length, port, timeout, hostname);
+			ssh_bind(remotessh, progname, hostname, service,
+			    buffer_size, udp_length, timeout);
 			if (pledge("stdio dns inet", NULL) == -1)
 				err(1, "pledge");
-			sleep(1);  /* XXX */
+			ssh_getpeername(&hostname, &service);
 		}
-		udp_connect(hostname, port);
+		udp_connect(hostname, service);
+		udp_getsockname(&localaddr, &localport);
 		udp_buffersize(buffer_size);
 		if (timeout > 0)
 			alarm(timeout);
@@ -183,12 +190,23 @@ main(int argc, char *argv[])
 		if (remotessh != NULL)
 			ssh_wait();
 	} else {
-		udp_bind(hostname, port);
+		udp_bind(hostname, service);
+		udp_getsockname(&localaddr, &localport);
 		udp_buffersize(buffer_size);
+/*
+		if (remotessh != NULL) {
+			ssh_connect(remotessh, progname, buffer_size,
+			    udp_length, localport, timeout, localport);
+			if (pledge("stdio dns inet", NULL) == -1)
+				err(1, "pledge");
+		}
+*/
 		if (timeout > 0)
 			alarm(timeout);
 		udp_receive(udp_payload, udp_length);
 	}
+	free(localaddr);
+	free(localport);
 
 	return 0;
 }
@@ -200,7 +218,7 @@ alarm_handler(int sig)
 }
 
 void
-udp_bind(const char *host, const char *port)
+udp_bind(const char *host, const char *service)
 {
 	struct addrinfo hints, *res, *res0;
 	int error;
@@ -212,7 +230,7 @@ udp_bind(const char *host, const char *port)
 	hints.ai_socktype = SOCK_DGRAM;
 	hints.ai_protocol = 17;
 	hints.ai_flags = AI_PASSIVE;
-	error = getaddrinfo(host, port, &hints, &res0);
+	error = getaddrinfo(host, service, &hints, &res0);
 	if (error)
 		errx(1, "getaddrinfo: %s", gai_strerror(error));
 	udp_socket = -1;
@@ -237,12 +255,12 @@ udp_bind(const char *host, const char *port)
 	}
 	if (udp_socket == -1)
 		err(1, "%s", cause);
-	address_family = res->ai_family;
+	udp_family = res->ai_family;
 	freeaddrinfo(res0);
 }
 
 void
-udp_connect(const char *host, const char *port)
+udp_connect(const char *host, const char *service)
 {
 	struct addrinfo hints, *res, *res0;
 	int error;
@@ -253,7 +271,7 @@ udp_connect(const char *host, const char *port)
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_DGRAM;
 	hints.ai_protocol = 17;
-	error = getaddrinfo(host, port, &hints, &res0);
+	error = getaddrinfo(host, service, &hints, &res0);
 	if (error)
 		errx(1, "getaddrinfo: %s", gai_strerror(error));
 	udp_socket = -1;
@@ -278,8 +296,35 @@ udp_connect(const char *host, const char *port)
 	}
 	if (udp_socket == -1)
 		err(1, "%s", cause);
-	address_family = res->ai_family;
+	udp_family = res->ai_family;
 	freeaddrinfo(res0);
+}
+
+void
+udp_getsockname(char **addr, char **port)
+{
+	struct sockaddr_storage ss;
+	struct sockaddr *sa = (struct sockaddr *)&ss;
+	socklen_t len;
+	int error;
+
+	len = sizeof(ss);
+	if (getsockname(udp_socket, sa, &len) == -1)
+		err(1, "getsockname");
+
+	*addr = malloc(NI_MAXHOST);
+	if (*addr == NULL)
+		err(1, "malloc addr");
+	*port = malloc(NI_MAXSERV);
+	if (*port == NULL)
+		err(1, "malloc port");
+
+	error = getnameinfo(sa, len, *addr, NI_MAXHOST, *port, NI_MAXSERV,
+	    NI_NUMERICHOST | NI_NUMERICSERV | NI_DGRAM);
+	if (error)
+		errx(1, "getnameinfo: %s", gai_strerror(error));
+
+	printf("sockname: %s %s\n", *addr, *port);
 }
 
 void
@@ -323,7 +368,7 @@ udp_send(const char *payload, size_t udplen)
 	if (gettimeofday(&end, NULL) == -1)
 		err(1, "gettimeofday end");
 
-	length = (address_family == AF_INET) ?
+	length = (udp_family == AF_INET) ?
 	    sizeof(struct ip) : sizeof(struct ip6_hdr);
 	length += sizeof(struct udphdr) + udplen;
 	timersub(&end, &begin, &duration);
@@ -385,7 +430,7 @@ udp_receive(char *payload, size_t udplen)
 	if (gettimeofday(&end, NULL) == -1)
 		err(1, "gettimeofday end");
 
-	length = (address_family == AF_INET) ?
+	length = (udp_family == AF_INET) ?
 	    sizeof(struct ip) : sizeof(struct ip6_hdr);
 	length += sizeof(struct udphdr) + rcvlen;
 	if (timerisset(&idle)) {
@@ -404,8 +449,9 @@ udp_receive(char *payload, size_t udplen)
 }
 
 void
-ssh_bind(const char *remotessh, const char *progname, int buffer_size,
-    size_t udp_length, const char *port, int timeout, const char *hostname)
+ssh_bind(const char *remotessh, const char *progname,
+    const char *hostname, const char *service,
+    int buffer_size, size_t udp_length, int timeout)
 {
 	char *argv[16];
 
@@ -419,7 +465,7 @@ ssh_bind(const char *remotessh, const char *progname, int buffer_size,
 	if (asprintf(&argv[6], "%zu", udp_length) == -1)
 		err(1, "asprintf udp length");
 	argv[7] = "-p";
-	argv[8] = (char *)port;
+	argv[8] = (char *)service;
 	argv[9] = "-t";
 	if (asprintf(&argv[10], "%d", timeout + 1) == -1)
 		err(1, "asprintf timeout");
@@ -458,21 +504,63 @@ ssh_pipe(char *argv[])
 	if (close(fp[1]) == -1)
 		err(1, "close write pipe");
 
-	ssh_fd = fp[0];
+	ssh_stream = fdopen(fp[0], "r");
+	if (ssh_stream == NULL)
+		err(1, "fdopen");
+}
+
+void
+ssh_getpeername(char **addr, char **port)
+{
+	char *line, *str, **wp, *words[4];
+	size_t len;
+
+	line = fgetln(ssh_stream, &len);
+	if (line == NULL)
+		err(1, "fgetln sockname");
+	line = strndup(line, len);
+	if (line == NULL)
+		err(1, "strndup sockname");
+	if (len > 0 && line[len-1] == '\n')
+		line[len-1] = '\0';
+
+	str = line;
+	for (wp = &words[0]; wp < &words[4]; wp++)
+		*wp = strsep(&str, " ");
+	if (words[0] == NULL || strcmp("sockname:", words[0]) != 0)
+		errx(1, "ssh no sockname: %s", line);
+	if (words[1] == NULL)
+		errx(1, "ssh no addr");
+	*addr = strdup(words[1]);
+	if (*addr == NULL)
+		err(1, "strdup addr");
+	if (words[2] == NULL)
+		errx(1, "ssh no port");
+	*port = strdup(words[2]);
+	if (*port == NULL)
+		err(1, "strdup port");
+	if (words[3] != NULL)
+		errx(1, "ssh bad sockname: %s", words[3]);
+	free(line);
+
+	printf("peername: %s %s\n", *addr, *port);
 }
 
 void
 ssh_wait(void)
 {
-	char buf[1024];
-	ssize_t len;
+	char *line;
+	size_t len;
 	int status;
 
-	len = read(ssh_fd, buf, sizeof(buf) - 1);
-	if (len == -1)
-		err(1, "read pipe");
-	buf[len] = '\0';
-	printf("%s", buf);
+	line = fgetln(ssh_stream, &len);
+	if (line == NULL)
+		err(1, "fgetln status");
+	line = strndup(line, len);
+	if (line == NULL)
+		err(1, "strndup status");
+	printf("%s", line);
+	free(line);
 
 	if (waitpid(ssh_pid, &status, 0) == -1)
 		err(1, "waitpid");
