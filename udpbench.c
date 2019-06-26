@@ -406,10 +406,14 @@ udp_receive(char *payload, size_t udplen)
 					/* packet was seen before timeout */
 					timersub(&idle, &timeo, &idle);
 				}
+				if (bored * timeo.tv_usec > 1000000) {
+					/* more than a second idle time */
+					break;
+				}
 				continue;
 			}
 			if (errno == EINTR)
-				break;
+				continue;
 			err(1, "recv");
 		}
 		bored = 0;
@@ -464,7 +468,7 @@ ssh_bind(const char *remotessh, const char *progname,
 	argv[7] = "-p";
 	argv[8] = (char *)service;
 	argv[9] = "-t";
-	if (asprintf(&argv[10], "%d", timeout + 1) == -1)
+	if (asprintf(&argv[10], "%d", timeout + 2) == -1)
 		err(1, "asprintf timeout");
 	argv[11] = "recv";
 	argv[12] = (char *)hostname;
