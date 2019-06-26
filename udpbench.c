@@ -49,6 +49,8 @@ void udp_send(const char *, size_t);
 void udp_receive(char *, size_t);
 void ssh_bind(const char *, const char *, const char *, const char *,
     int, size_t , int);
+void ssh_connect(const char *, const char *, const char *, const char *,
+    int, size_t , int);
 void ssh_pipe(char **);
 void ssh_getpeername(char **, char **);
 void ssh_wait(void);
@@ -58,7 +60,7 @@ usage(void)
 {
 	fprintf(stderr, "usage: udpperf [-b bufsize] [-l length] [-p port] "
 	    "[-s remotessh] [-t timeout] "
-	    "local|remote send|recv [hostname]\n"
+	    "send|recv [hostname]\n"
 	    "    -b bufsize     set size of send or receive buffer\n"
 	    "    -l length      set length of udp payload\n"
 	    "    -p port        udp port for bind or connect, default 12345\n"
@@ -75,12 +77,6 @@ enum direction {
     DIR_SEND,
     DIR_RECV,
 } dir;
-
-enum mode {
-    MOD_NONE,
-    MOD_LOCAL,
-    MOD_REMOTE,
-} mod;
 
 int
 main(int argc, char *argv[])
@@ -133,31 +129,22 @@ main(int argc, char *argv[])
 	argc -= optind;
 	argv += optind;
 
-	if (argc > 3)
+	if (argc > 2)
 		usage();
-	if (argc < 2)
+	if (argc < 1)
 		errx(1, "no mode and direction");
 
-	if (strcmp(argv[0], "local") == 0)
-		mod = MOD_LOCAL;
-	else if (strcmp(argv[0], "remote") == 0)
-		mod = MOD_REMOTE;
-	else
-		errx(1, "unknown mode: %s", argv[0]);
-
-	if (strcmp(argv[1], "send") == 0)
+	if (strcmp(argv[0], "send") == 0)
 		dir = DIR_SEND;
-	else if (strcmp(argv[1], "recv") == 0)
+	else if (strcmp(argv[0], "recv") == 0)
 		dir = DIR_RECV;
 	else
-		errx(1, "unknown direction: %s", argv[1]);
+		errx(1, "unknown direction: %s", argv[0]);
 
-	if (dir == DIR_SEND && argc < 3)
+	if (dir == DIR_SEND && argc < 2)
 		errx(1, "no hostname");
-	if (argc >= 3)
-		hostname = argv[2];
-	if (mod == MOD_REMOTE && remotessh != NULL)
-		errx(1, "remotessh only valid for local mode: %s", remotessh);
+	if (argc >= 2)
+		hostname = argv[1];
 	if (remotessh == NULL) {
 		if (pledge("stdio dns inet", NULL) == -1)
 			err(1, "pledge");
@@ -193,17 +180,18 @@ main(int argc, char *argv[])
 		udp_bind(hostname, service);
 		udp_getsockname(&localaddr, &localport);
 		udp_buffersize(buffer_size);
-/*
 		if (remotessh != NULL) {
-			ssh_connect(remotessh, progname, buffer_size,
-			    udp_length, localport, timeout, localport);
+			ssh_connect(remotessh, progname, localaddr, localport,
+			buffer_size, udp_length, timeout);
 			if (pledge("stdio dns inet", NULL) == -1)
 				err(1, "pledge");
+			ssh_getpeername(NULL, NULL);
 		}
-*/
 		if (timeout > 0)
-			alarm(timeout);
+			alarm(timeout + 3);
 		udp_receive(udp_payload, udp_length);
+		if (remotessh != NULL)
+			ssh_wait();
 	}
 	free(localaddr);
 	free(localport);
@@ -420,7 +408,7 @@ udp_receive(char *payload, size_t udplen)
 				continue;
 			}
 			if (errno == EINTR)
-				break;
+			break;
 			err(1, "recv");
 		}
 		bored = 0;
@@ -453,7 +441,7 @@ ssh_bind(const char *remotessh, const char *progname,
     const char *hostname, const char *service,
     int buffer_size, size_t udp_length, int timeout)
 {
-	char *argv[16];
+	char *argv[14];
 
 	argv[0] = "ssh";
 	argv[1] = (char *)remotessh;
@@ -469,10 +457,41 @@ ssh_bind(const char *remotessh, const char *progname,
 	argv[9] = "-t";
 	if (asprintf(&argv[10], "%d", timeout + 1) == -1)
 		err(1, "asprintf timeout");
-	argv[11] = "remote";
-	argv[12] = "recv";
-	argv[13] = (char *)hostname;
-	argv[14] = NULL;
+	argv[11] = "recv";
+	argv[12] = (char *)hostname;
+	argv[13] = NULL;
+
+	ssh_pipe(argv);
+
+	free(argv[4]);
+	free(argv[6]);
+	free(argv[10]);
+}
+
+void
+ssh_connect(const char *remotessh, const char *progname,
+    const char *hostname, const char *service,
+    int buffer_size, size_t udp_length, int timeout)
+{
+	char *argv[14];
+
+	argv[0] = "ssh";
+	argv[1] = (char *)remotessh;
+	argv[2] = (char *)progname;
+	argv[3] = "-b";
+	if (asprintf(&argv[4], "%d", buffer_size) == -1)
+		err(1, "asprintf buffer size");
+	argv[5] = "-l";
+	if (asprintf(&argv[6], "%zu", udp_length) == -1)
+		err(1, "asprintf udp length");
+	argv[7] = "-p";
+	argv[8] = (char *)service;
+	argv[9] = "-t";
+	if (asprintf(&argv[10], "%d", timeout) == -1)
+		err(1, "asprintf timeout");
+	argv[11] = "send";
+	argv[12] = (char *)hostname;
+	argv[13] = NULL;
 
 	ssh_pipe(argv);
 
@@ -531,19 +550,23 @@ ssh_getpeername(char **addr, char **port)
 		errx(1, "ssh no sockname: %s", line);
 	if (words[1] == NULL)
 		errx(1, "ssh no addr");
-	*addr = strdup(words[1]);
-	if (*addr == NULL)
-		err(1, "strdup addr");
+	if (addr != NULL) {
+		*addr = strdup(words[1]);
+		if (*addr == NULL)
+			err(1, "strdup addr");
+	}
 	if (words[2] == NULL)
 		errx(1, "ssh no port");
-	*port = strdup(words[2]);
-	if (*port == NULL)
-		err(1, "strdup port");
+	if (port != NULL) {
+		*port = strdup(words[2]);
+		if (*port == NULL)
+			err(1, "strdup port");
+	}
 	if (words[3] != NULL)
 		errx(1, "ssh bad sockname: %s", words[3]);
-	free(line);
 
-	printf("peername: %s %s\n", *addr, *port);
+	printf("peername: %s %s\n", words[1], words[2]);
+	free(line);
 }
 
 void
