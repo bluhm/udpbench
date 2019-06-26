@@ -44,7 +44,7 @@ void alarm_handler(int);
 void udp_bind(const char *, const char *);
 void udp_connect(const char *, const char *);
 void udp_getsockname(char **, char **);
-void udp_buffersize(int);
+void udp_setbuffersize(int, int);
 void udp_send(const char *, size_t);
 void udp_receive(char *, size_t);
 void ssh_bind(const char *, const char *, const char *, const char *,
@@ -59,53 +59,45 @@ static void __dead
 usage(void)
 {
 	fprintf(stderr, "usage: udpperf [-b bufsize] [-l length] [-p port] "
-	    "[-s remotessh] [-t timeout] "
-	    "send|recv [hostname]\n"
+	    "[-s remotessh] [-t timeout] send|recv [hostname]\n"
 	    "    -b bufsize     set size of send or receive buffer\n"
 	    "    -l length      set length of udp payload\n"
-	    "    -p port        udp port for bind or connect, default 12345\n"
-	    "    -s remotessh	ssh host to start the remote udpperf\n"
+	    "    -p port        udp port, default 12345, random 0\n"
+	    "    -r remotessh   ssh host to start udpperf on remote side\n"
 	    "    -t timeout     send duration or receive timeout, default 1\n"
+	    "    send|recv      send or receive mode for local side\n"
+	    "    hostname       address of receiving side\n"
 	    );
 	exit(2);
 }
-
-int plen;
-
-enum direction {
-    DIR_NONE,
-    DIR_SEND,
-    DIR_RECV,
-} dir;
 
 int
 main(int argc, char *argv[])
 {
 	struct sigaction act;
 	const char *errstr;
-	char *udp_payload;
-	size_t udp_length = 0;
-	int ch, buffer_size = 0, timeout = 1;
+	char *udppayload;
+	size_t udplength = 0;
+	int ch, buffersize = 0, timeout = 1, sendmode;
 	const char *progname = argv[0];
 	char *hostname = NULL, *service = "12345", *remotessh = NULL;
 	char *localaddr, *localport;
 
 	if (pledge("stdio dns inet proc exec", NULL) == -1)
 		err(1, "pledge");
-
 	if (setvbuf(stdout, NULL, _IOLBF, 0) != 0)
 		err(1, "setvbuf");
 
-	while ((ch = getopt(argc, argv, "b:l:p:s:t:")) != -1) {
+	while ((ch = getopt(argc, argv, "b:l:p:r:t:")) != -1) {
 		switch (ch) {
 		case 'b':
-			buffer_size = strtonum(optarg, 0, INT_MAX, &errstr);
+			buffersize = strtonum(optarg, 0, INT_MAX, &errstr);
 			if (errstr != NULL)
 				errx(1, "buffer size is %s: %s", errstr,
 				    optarg);
 			break;
 		case 'l':
-			udp_length = strtonum(optarg, 0, IP_MAXPACKET, &errstr);
+			udplength = strtonum(optarg, 0, IP_MAXPACKET, &errstr);
 			if (errstr != NULL)
 				errx(1, "payload length is %s: %s", errstr,
 				    optarg);
@@ -113,7 +105,7 @@ main(int argc, char *argv[])
 		case 'p':
 			service = optarg;
 			break;
-		case 's':
+		case 'r':
 			remotessh = optarg;
 			break;
 		case 't':
@@ -132,17 +124,16 @@ main(int argc, char *argv[])
 	if (argc > 2)
 		usage();
 	if (argc < 1)
-		errx(1, "no mode and direction");
-
+		errx(1, "send or recv required");
 	if (strcmp(argv[0], "send") == 0)
-		dir = DIR_SEND;
+		sendmode = 1;
 	else if (strcmp(argv[0], "recv") == 0)
-		dir = DIR_RECV;
+		sendmode = 0;
 	else
-		errx(1, "unknown direction: %s", argv[0]);
+		errx(1, "bad send or recv: %s", argv[0]);
 
-	if (dir == DIR_SEND && argc < 2)
-		errx(1, "no hostname");
+	if (sendmode && argc < 2)
+		errx(1, "hostname required for send");
 	if (argc >= 2)
 		hostname = argv[1];
 	if (remotessh == NULL) {
@@ -156,43 +147,41 @@ main(int argc, char *argv[])
 	if (sigaction(SIGALRM, &act, NULL) == -1)
 		err(1, "sigaction");
 
-	udp_payload = malloc(udp_length);
-	if (udp_payload == NULL)
+	udppayload = malloc(udplength);
+	if (udppayload == NULL)
 		err(1, "malloc udp payload");
-	if (dir == DIR_SEND) {
-		arc4random_buf(udp_payload, udp_length);
+	if (sendmode) {
+		arc4random_buf(udppayload, udplength);
 		if (remotessh != NULL) {
 			ssh_bind(remotessh, progname, hostname, service,
-			    buffer_size, udp_length, timeout);
+			    buffersize, udplength, timeout);
 			if (pledge("stdio dns inet", NULL) == -1)
 				err(1, "pledge");
 			ssh_getpeername(&hostname, &service);
 		}
 		udp_connect(hostname, service);
 		udp_getsockname(&localaddr, &localport);
-		udp_buffersize(buffer_size);
+		udp_setbuffersize(SO_SNDBUF, buffersize);
 		if (timeout > 0)
 			alarm(timeout);
-		udp_send(udp_payload, udp_length);
-		if (remotessh != NULL)
-			ssh_wait();
+		udp_send(udppayload, udplength);
 	} else {
 		udp_bind(hostname, service);
 		udp_getsockname(&localaddr, &localport);
-		udp_buffersize(buffer_size);
+		udp_setbuffersize(SO_RCVBUF, buffersize);
 		if (remotessh != NULL) {
 			ssh_connect(remotessh, progname, localaddr, localport,
-			buffer_size, udp_length, timeout);
+			buffersize, udplength, timeout);
 			if (pledge("stdio dns inet", NULL) == -1)
 				err(1, "pledge");
 			ssh_getpeername(NULL, NULL);
 		}
 		if (timeout > 0)
-			alarm(timeout + 3);
-		udp_receive(udp_payload, udp_length);
-		if (remotessh != NULL)
-			ssh_wait();
+			alarm(timeout + 2);
+		udp_receive(udppayload, udplength);
 	}
+	if (remotessh != NULL)
+		ssh_wait();
 	free(localaddr);
 	free(localport);
 
@@ -316,16 +305,14 @@ udp_getsockname(char **addr, char **port)
 }
 
 void
-udp_buffersize(int size)
+udp_setbuffersize(int name, int size)
 {
 	socklen_t len;
-	int name;
 
 	/* use default */
 	if (size == 0)
 		return;
 
-	name = (dir == DIR_SEND) ? SO_SNDBUF : SO_RCVBUF;
 	len = sizeof(size);
 	if (setsockopt(udp_socket, SOL_SOCKET, name, &size, len) == -1)
 		err(1, "setsockopt buffer size %d", size);
@@ -439,7 +426,7 @@ udp_receive(char *payload, size_t udplen)
 void
 ssh_bind(const char *remotessh, const char *progname,
     const char *hostname, const char *service,
-    int buffer_size, size_t udp_length, int timeout)
+    int buffersize, size_t udplength, int timeout)
 {
 	char *argv[14];
 
@@ -447,10 +434,10 @@ ssh_bind(const char *remotessh, const char *progname,
 	argv[1] = (char *)remotessh;
 	argv[2] = (char *)progname;
 	argv[3] = "-b";
-	if (asprintf(&argv[4], "%d", buffer_size) == -1)
+	if (asprintf(&argv[4], "%d", buffersize) == -1)
 		err(1, "asprintf buffer size");
 	argv[5] = "-l";
-	if (asprintf(&argv[6], "%zu", udp_length) == -1)
+	if (asprintf(&argv[6], "%zu", udplength) == -1)
 		err(1, "asprintf udp length");
 	argv[7] = "-p";
 	argv[8] = (char *)service;
@@ -471,7 +458,7 @@ ssh_bind(const char *remotessh, const char *progname,
 void
 ssh_connect(const char *remotessh, const char *progname,
     const char *hostname, const char *service,
-    int buffer_size, size_t udp_length, int timeout)
+    int buffersize, size_t udplength, int timeout)
 {
 	char *argv[14];
 
@@ -479,10 +466,10 @@ ssh_connect(const char *remotessh, const char *progname,
 	argv[1] = (char *)remotessh;
 	argv[2] = (char *)progname;
 	argv[3] = "-b";
-	if (asprintf(&argv[4], "%d", buffer_size) == -1)
+	if (asprintf(&argv[4], "%d", buffersize) == -1)
 		err(1, "asprintf buffer size");
 	argv[5] = "-l";
-	if (asprintf(&argv[6], "%zu", udp_length) == -1)
+	if (asprintf(&argv[6], "%zu", udplength) == -1)
 		err(1, "asprintf udp length");
 	argv[7] = "-p";
 	argv[8] = (char *)service;
@@ -534,6 +521,7 @@ ssh_getpeername(char **addr, char **port)
 	char *line, *str, **wp, *words[4];
 	size_t len;
 
+	errno = 0;
 	line = fgetln(ssh_stream, &len);
 	if (line == NULL)
 		err(1, "fgetln sockname");
