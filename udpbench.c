@@ -56,7 +56,7 @@ void ssh_pipe(char **);
 void ssh_getpeername(char **, char **);
 void ssh_wait(void);
 
-static void __dead
+static void
 usage(void)
 {
 	fprintf(stderr, "usage: udpperf [-b bufsize] [-l length] [-p port] "
@@ -84,8 +84,10 @@ main(int argc, char *argv[])
 	char *hostname = NULL, *service = "12345", *remotessh = NULL;
 	char *localaddr, *localport;
 
+#ifdef __OpenBSD__
 	if (pledge("stdio dns inet proc exec", NULL) == -1)
 		err(1, "pledge");
+#endif
 	if (setvbuf(stdout, NULL, _IOLBF, 0) != 0)
 		err(1, "setvbuf");
 
@@ -137,10 +139,12 @@ main(int argc, char *argv[])
 		errx(1, "hostname required for send");
 	if (argc >= 2)
 		hostname = argv[1];
+#ifdef __OpenBSD__
 	if (remotessh == NULL) {
 		if (pledge("stdio dns inet", NULL) == -1)
 			err(1, "pledge");
 	}
+#endif
 
 	memset(&act, 0, sizeof(act));
 	act.sa_handler = alarm_handler;
@@ -156,8 +160,10 @@ main(int argc, char *argv[])
 		if (remotessh != NULL) {
 			ssh_bind(remotessh, progname, hostname, service,
 			    buffersize, udplength, timeout);
+#ifdef __OpenBSD__
 			if (pledge("stdio dns inet", NULL) == -1)
 				err(1, "pledge");
+#endif
 			ssh_getpeername(&hostname, &service);
 		}
 		udp_connect(hostname, service);
@@ -177,8 +183,10 @@ main(int argc, char *argv[])
 		if (remotessh != NULL) {
 			ssh_connect(remotessh, progname, localaddr, localport,
 			buffersize, udplength, timeout);
+#ifdef __OpenBSD__
 			if (pledge("stdio dns inet", NULL) == -1)
 				err(1, "pledge");
+#endif
 			ssh_getpeername(NULL, NULL);
 		}
 		if (timeout > 0)
