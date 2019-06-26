@@ -47,6 +47,7 @@ void udp_getsockname(char **, char **);
 void udp_setbuffersize(int, int);
 void udp_send(const char *, size_t);
 void udp_receive(char *, size_t);
+void udp_close(void);
 void ssh_bind(const char *, const char *, const char *, const char *,
     int, size_t , int);
 void ssh_connect(const char *, const char *, const char *, const char *,
@@ -160,11 +161,15 @@ main(int argc, char *argv[])
 			ssh_getpeername(&hostname, &service);
 		}
 		udp_connect(hostname, service);
-		udp_getsockname(&localaddr, &localport);
+		udp_getsockname(NULL, NULL);
 		udp_setbuffersize(SO_SNDBUF, buffersize);
 		if (timeout > 0)
 			alarm(timeout);
 		udp_send(udppayload, udplength);
+		if (remotessh != NULL) {
+			free(hostname);
+			free(service);
+		}
 	} else {
 		udp_bind(hostname, service);
 		udp_getsockname(&localaddr, &localport);
@@ -179,11 +184,13 @@ main(int argc, char *argv[])
 		if (timeout > 0)
 			alarm(timeout + 2);
 		udp_receive(udppayload, udplength);
+		free(localaddr);
+		free(localport);
 	}
 	if (remotessh != NULL)
 		ssh_wait();
-	free(localaddr);
-	free(localport);
+	udp_close();
+	free(udppayload);
 
 	return 0;
 }
@@ -282,6 +289,7 @@ udp_getsockname(char **addr, char **port)
 {
 	struct sockaddr_storage ss;
 	struct sockaddr *sa = (struct sockaddr *)&ss;
+	char host[NI_MAXHOST], serv[NI_MAXSERV];
 	socklen_t len;
 	int error;
 
@@ -289,19 +297,22 @@ udp_getsockname(char **addr, char **port)
 	if (getsockname(udp_socket, sa, &len) == -1)
 		err(1, "getsockname");
 
-	*addr = malloc(NI_MAXHOST);
-	if (*addr == NULL)
-		err(1, "malloc addr");
-	*port = malloc(NI_MAXSERV);
-	if (*port == NULL)
-		err(1, "malloc port");
-
-	error = getnameinfo(sa, len, *addr, NI_MAXHOST, *port, NI_MAXSERV,
+	error = getnameinfo(sa, len, host, sizeof(host), serv, sizeof(serv),
 	    NI_NUMERICHOST | NI_NUMERICSERV | NI_DGRAM);
 	if (error)
 		errx(1, "getnameinfo: %s", gai_strerror(error));
+	if (addr != NULL) {
+		*addr = strdup(host);
+		if (*addr == NULL)
+			err(1, "strdup addr");
+	}
+	if (port != NULL) {
+		*port = strdup(serv);
+		if (*port == NULL)
+			err(1, "strdup port");
+	}
 
-	printf("sockname: %s %s\n", *addr, *port);
+	printf("sockname: %s %s\n", host, serv);
 }
 
 void
@@ -421,6 +432,13 @@ udp_receive(char *payload, size_t udplen)
 	if (idle.tv_sec < 1)
 		errx(1, "not enough idle time: %lld.%06ld",
 		    idle.tv_sec, idle.tv_usec);
+}
+
+void
+udp_close(void)
+{
+	if (close(udp_socket) == -1)
+		err(1, "close");
 }
 
 void
