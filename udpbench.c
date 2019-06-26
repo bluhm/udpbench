@@ -553,15 +553,14 @@ void
 ssh_getpeername(char **addr, char **port)
 {
 	char *line, *str, **wp, *words[4];
-	size_t len;
+	size_t n;
+	ssize_t len;
 
-	errno = 0;
-	line = fgetln(ssh_stream, &len);
-	if (line == NULL)
-		err(1, "fgetln sockname");
-	line = strndup(line, len);
-	if (line == NULL)
-		err(1, "strndup sockname");
+	line = NULL;
+	n = 0;
+	len = getline(&line, &n, ssh_stream);
+	if (len < 0)
+		err(1, "getline sockname");
 	if (len > 0 && line[len-1] == '\n')
 		line[len-1] = '\0';
 
@@ -595,16 +594,18 @@ void
 ssh_wait(void)
 {
 	char *line;
-	size_t len;
+	size_t n;
+	ssize_t len;
 	int status;
 
-	line = fgetln(ssh_stream, &len);
-	if (line == NULL)
-		err(1, "fgetln status");
-	line = strndup(line, len);
-	if (line == NULL)
-		err(1, "strndup status");
-	printf("%s", line);
+	line = NULL;
+	n = 0;
+	len = getline(&line, &n, ssh_stream);
+	if (len < 0)
+		err(1, "getline status");
+	if (len > 0 && line[len-1] == '\n')
+		line[len-1] = '\0';
+	printf("%s\n", line);
 	free(line);
 
 	if (waitpid(ssh_pid, &status, 0) == -1)
