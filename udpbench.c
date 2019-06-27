@@ -45,7 +45,7 @@ void udp_bind(const char *, const char *);
 void udp_connect(const char *, const char *);
 void udp_getsockname(char **, char **);
 void udp_setbuffersize(int, int);
-void udp_send(const char *, size_t);
+void udp_send(const char *, size_t, unsigned long);
 void udp_receive(char *, size_t);
 void udp_close(void);
 void ssh_bind(const char *, const char *, const char *, const char *,
@@ -59,10 +59,11 @@ void ssh_wait(void);
 static void
 usage(void)
 {
-	fprintf(stderr, "usage: udpperf [-b bufsize] [-l length] [-p port] "
-	    "[-R remoteprog] [-r remotessh] [-t timeout] send|recv "
-	    "[hostname]\n"
+	fprintf(stderr, "usage: udpperf [-b bufsize] [-d delaypacket] "
+	    "[-l length] [-p port] [-R remoteprog] [-r remotessh] "
+	    "[-t timeout] send|recv [hostname]\n"
 	    "    -b bufsize     set size of send or receive buffer\n"
+	    "    -d delaypacket delay sending to packets per second rate\n"
 	    "    -l length      set length of udp payload\n"
 	    "    -p port        udp port, default 12345, random 0\n"
 	    "    -R remoteprog  path of udpperf tool on remote side\n"
@@ -82,6 +83,7 @@ main(int argc, char *argv[])
 	char *udppayload;
 	size_t udplength = 0;
 	int ch, buffersize = 0, timeout = 1, sendmode;
+	unsigned long delaypacket;
 	const char *progname = argv[0];
 	char *hostname = NULL, *service = "12345", *remotessh = NULL;
 	char *localaddr, *localport;
@@ -93,19 +95,25 @@ main(int argc, char *argv[])
 	if (setvbuf(stdout, NULL, _IOLBF, 0) != 0)
 		err(1, "setvbuf");
 
-	while ((ch = getopt(argc, argv, "b:l:p:R:r:t:")) != -1) {
+	while ((ch = getopt(argc, argv, "b:d:l:p:R:r:t:")) != -1) {
 		switch (ch) {
 		case 'b':
 			buffersize = strtonum(optarg, 0, INT_MAX, &errstr);
 			if (errstr != NULL)
-				errx(1, "buffer size is %s: %s", errstr,
-				    optarg);
+				errx(1, "buffer size is %s: %s",
+				    errstr, optarg);
+			break;
+		case 'd':
+			delaypacket = strtonum(optarg, 0, LONG_MAX, &errstr);
+			if (errstr != NULL)
+				errx(1, "delay packets per second is %s: %s",
+				    errstr, optarg);
 			break;
 		case 'l':
 			udplength = strtonum(optarg, 0, IP_MAXPACKET, &errstr);
 			if (errstr != NULL)
-				errx(1, "payload length is %s: %s", errstr,
-				    optarg);
+				errx(1, "payload length is %s: %s",
+				    errstr, optarg);
 			break;
 		case 'p':
 			service = optarg;
@@ -119,8 +127,8 @@ main(int argc, char *argv[])
 		case 't':
 			timeout = strtonum(optarg, 0, INT_MAX, &errstr);
 			if (errstr != NULL)
-				errx(1, "timeout is %s: %s", errstr,
-				    optarg);
+				errx(1, "timeout is %s: %s",
+				    errstr, optarg);
 			break;
 		default:
 			usage();
@@ -176,7 +184,7 @@ main(int argc, char *argv[])
 		udp_setbuffersize(SO_SNDBUF, buffersize);
 		if (timeout > 0)
 			alarm(timeout);
-		udp_send(udppayload, udplength);
+		udp_send(udppayload, udplength, delaypacket);
 		if (remotessh != NULL) {
 			free(hostname);
 			free(service);
@@ -344,15 +352,17 @@ udp_setbuffersize(int name, int size)
 }
 
 void
-udp_send(const char *payload, size_t udplen)
+udp_send(const char *payload, size_t udplen, unsigned long delaypacket)
 {
 	struct timeval begin, end, duration;
+	struct timespec wait;
 	unsigned long syscall, packet;
 	size_t length;
-	double bits;
+	double bits, expectduration, waittime;
 
 	if (gettimeofday(&begin, NULL) == -1)
 		err(1, "gettimeofday begin");
+	timerclear(&end);
 
 	syscall = 0;
 	packet = 0;
@@ -364,6 +374,26 @@ udp_send(const char *payload, size_t udplen)
 			err(1, "send");
 		}
 		packet++;
+		if (delaypacket) {
+			if (!timerisset(&end)) {
+				if (gettimeofday(&end, NULL) == -1)
+					err(1, "gettimeofday delay");
+			}
+			timersub(&end, &begin, &duration);
+			if (!timerisset(&duration))
+				duration.tv_usec = 1;
+			expectduration = (double)packet / (double)delaypacket;
+			waittime = expectduration - (double)duration.tv_sec -
+			    (double)duration.tv_usec / 1000000.;
+			wait.tv_sec = waittime;
+			wait.tv_nsec = (waittime - (double)wait.tv_sec) *
+			    1000000000.;
+			if (wait.tv_sec > 0 || wait.tv_nsec > 0) {
+				nanosleep(&wait, NULL);
+				if (gettimeofday(&end, NULL) == -1)
+					err(1, "gettimeofday delay");
+			}
+		}
 	}
 
 	if (gettimeofday(&end, NULL) == -1)
@@ -374,7 +404,7 @@ udp_send(const char *payload, size_t udplen)
 	length += sizeof(struct udphdr) + udplen;
 	timersub(&end, &begin, &duration);
 	bits = (double)packet * length * 8;
-	bits /= (double)duration.tv_sec + duration.tv_usec / 1000000.;
+	bits /= (double)duration.tv_sec + (double)duration.tv_usec / 1000000.;
 	printf("send: syscall %lu, packet %lu, length %zu, "
 	    "duration %lld.%06ld, bit/s %g\n", syscall, packet, length,
 	    (long long)duration.tv_sec, duration.tv_usec, bits);
@@ -446,7 +476,7 @@ udp_receive(char *payload, size_t udplen)
 		timersub(&end, &begin, &duration);
 	}
 	bits = (double)packet * length * 8;
-	bits /= (double)duration.tv_sec + duration.tv_usec / 1000000.;
+	bits /= (double)duration.tv_sec + (double)duration.tv_usec / 1000000.;
 	printf("recv: syscall %lu, packet %lu, length %zu, "
 	    "duration %lld.%06ld, bit/s %g\n", syscall, packet, length,
 	    (long long)duration.tv_sec, duration.tv_usec, bits);
