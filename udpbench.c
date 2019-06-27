@@ -564,8 +564,12 @@ ssh_getpeername(char **addr, char **port)
 	line = NULL;
 	n = 0;
 	len = getline(&line, &n, ssh_stream);
-	if (len < 0)
-		err(1, "getline sockname");
+	if (len < 0) {
+		if (ferror(ssh_stream))
+			err(1, "getline sockname");
+		else
+			errx(1, "getline sockname empty");
+	}
 	if (len > 0 && line[len-1] == '\n')
 		line[len-1] = '\0';
 
@@ -606,8 +610,12 @@ ssh_wait(void)
 	line = NULL;
 	n = 0;
 	len = getline(&line, &n, ssh_stream);
-	if (len < 0)
-		err(1, "getline status");
+	if (len < 0) {
+		if (ferror(ssh_stream))
+			err(1, "getline status");
+		else
+			errx(1, "getline status empty");
+	}
 	if (len > 0 && line[len-1] == '\n')
 		line[len-1] = '\0';
 	printf("%s\n", line);
