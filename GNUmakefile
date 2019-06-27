@@ -7,3 +7,6 @@ all:	udpbench
 
 clean:
 	rm -f udpbench udpbench.o
+
+install:
+	install -s udpbench /usr/local/bin/
