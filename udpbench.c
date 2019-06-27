@@ -373,7 +373,7 @@ udp_send(const char *payload, size_t udplen)
 	    sizeof(struct ip) : sizeof(struct ip6_hdr);
 	length += sizeof(struct udphdr) + udplen;
 	timersub(&end, &begin, &duration);
-	bits = (double)packet * length;
+	bits = (double)packet * length * 8;
 	bits /= (double)duration.tv_sec + duration.tv_usec / 1000000.;
 	printf("send: syscall %lu, packet %lu, length %zu, "
 	    "duration %lld.%06ld, bit/s %g\n", syscall, packet, length,
@@ -445,7 +445,7 @@ udp_receive(char *payload, size_t udplen)
 	} else {
 		timersub(&end, &begin, &duration);
 	}
-	bits = (double)packet * length;
+	bits = (double)packet * length * 8;
 	bits /= (double)duration.tv_sec + duration.tv_usec / 1000000.;
 	printf("recv: syscall %lu, packet %lu, length %zu, "
 	    "duration %lld.%06ld, bit/s %g\n", syscall, packet, length,
