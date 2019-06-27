@@ -60,7 +60,7 @@ static void
 usage(void)
 {
 	fprintf(stderr, "usage: udpperf [-b bufsize] [-l length] [-p port] "
-	    "[-s remotessh] [-t timeout] send|recv [hostname]\n"
+	    "[-r remotessh] [-t timeout] send|recv [hostname]\n"
 	    "    -b bufsize     set size of send or receive buffer\n"
 	    "    -l length      set length of udp payload\n"
 	    "    -p port        udp port, default 12345, random 0\n"
