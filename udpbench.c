@@ -225,7 +225,7 @@ udp_bind(const char *host, const char *service)
 	memset(&hints, 0, sizeof(hints));
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_DGRAM;
-	hints.ai_protocol = 17;
+	hints.ai_protocol = IPPROTO_UDP;
 	hints.ai_flags = AI_PASSIVE;
 	error = getaddrinfo(host, service, &hints, &res0);
 	if (error)
@@ -267,7 +267,7 @@ udp_connect(const char *host, const char *service)
 	memset(&hints, 0, sizeof(hints));
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_DGRAM;
-	hints.ai_protocol = 17;
+	hints.ai_protocol = IPPROTO_UDP;
 	error = getaddrinfo(host, service, &hints, &res0);
 	if (error)
 		errx(1, "getaddrinfo: %s", gai_strerror(error));
