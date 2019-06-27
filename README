@@ -1,3 +1,28 @@
 Measure UDP send and receive performance.  Be very careful that the
 data is reliable.  Avoid unnecessary system calls that may affect
 the result.
+
+The command line tool udpbench can operate either in send or receive
+mode.  It operates time based with an alarm signal.  In send mode
+it calls send(2) until the alarm triggers.  When receiving the
+recv(2) loop terminates after the timeout, it should be larger than
+the send timeout.  On top there is an idle detection to terminate
+receive mode prematurely.
+
+To calculate the send throughput, gettimeofday is called before the
+first and after last send(2) system call.  The number of successful
+system calls is the assumed the number of packets.
+
+On the receive side gettimeofday is called after the first recv(2)
+system call returns.  All other recv(2) calls are blocking for at
+most 100 milli seconds.  If there was no packet received for one
+second or if the timeout fires, the recv(2) loop terminates.  The
+later case is considered as an error.  The thoughput is calculated
+by packets successfully received and by the time between the return
+of the first and the last successful recv(2).
+
+To coordinate both sides, a locally running udpbench can automatically
+start a udpbench on a remote machine via ssh.  The remote send or
+receive mode is reversed.  All size, length or timeout parameters
+are used for both sides.  The hostname or IP address must be specified
+for the receiving machine.
