@@ -60,10 +60,12 @@ static void
 usage(void)
 {
 	fprintf(stderr, "usage: udpperf [-b bufsize] [-l length] [-p port] "
-	    "[-s remotessh] [-t timeout] send|recv [hostname]\n"
+	    "[-R remoteprog] [[-r remotessh] [-t timeout] send|recv "
+	    "[hostname]\n"
 	    "    -b bufsize     set size of send or receive buffer\n"
 	    "    -l length      set length of udp payload\n"
 	    "    -p port        udp port, default 12345, random 0\n"
+	    "    -R remoteprog  path of udpperf tool on remote side\n"
 	    "    -r remotessh   ssh host to start udpperf on remote side\n"
 	    "    -t timeout     send duration or receive timeout, default 1\n"
 	    "    send|recv      send or receive mode for local side\n"
@@ -91,7 +93,7 @@ main(int argc, char *argv[])
 	if (setvbuf(stdout, NULL, _IOLBF, 0) != 0)
 		err(1, "setvbuf");
 
-	while ((ch = getopt(argc, argv, "b:l:p:r:t:")) != -1) {
+	while ((ch = getopt(argc, argv, "b:l:p:R:r:t:")) != -1) {
 		switch (ch) {
 		case 'b':
 			buffersize = strtonum(optarg, 0, INT_MAX, &errstr);
@@ -107,6 +109,9 @@ main(int argc, char *argv[])
 			break;
 		case 'p':
 			service = optarg;
+			break;
+		case 'R':
+			progname = optarg;
 			break;
 		case 'r':
 			remotessh = optarg;
