@@ -60,7 +60,7 @@ void ssh_wait(void);
 static void
 usage(void)
 {
-	fprintf(stderr, "usage: udpperf [-b bufsize] [-d delaypacket] "
+	fprintf(stderr, "usage: udpbench [-b bufsize] [-d delaypacket] "
 	    "[-l length] [-p port] [-R remoteprog] [-r remotessh] "
 	    "[-t timeout] send|recv [hostname]\n"
 	    "    -b bufsize     set size of send or receive buffer\n"
