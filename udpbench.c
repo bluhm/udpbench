@@ -84,7 +84,7 @@ main(int argc, char *argv[])
 	char *udppayload;
 	size_t udplength = 0;
 	int ch, buffersize = 0, timeout = 1, sendmode;
-	unsigned long delaypacket;
+	unsigned long delaypacket = 0;
 	const char *progname = argv[0];
 	char *hostname = NULL, *service = "12345", *remotessh = NULL;
 	char *localaddr, *localport;
