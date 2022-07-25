@@ -4,9 +4,9 @@ the result.
 
 The command line tool udpbench can operate either in send or receive
 mode.  It operates time based with an alarm signal.  In send mode
-it calls send(2) until the alarm triggers.  When receiving the
-recv(2) loop terminates after the timeout, it should be larger than
-the send timeout.  On top there is an idle detection to terminate
+it calls send(2) until the alarm triggers.  When receiving, the
+recv(2) loop terminates after the timeout, which should be larger
+than the send timeout.  On top there is an idle detection to terminate
 receive mode prematurely.
 
 To calculate the send throughput, gettimeofday is called before the
