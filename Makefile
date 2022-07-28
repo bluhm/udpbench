@@ -3,7 +3,7 @@ NOMAN=		yes
 WARNINGS=	yes
 BINDIR?=	/usr/local/bin
 
-VERSION=	1.00
+VERSION=	1.01
 CLEANFILES=	udpbench-${VERSION}.tar.gz
 
 .PHONY: dist udpbench-${VERSION}.tar.gz
