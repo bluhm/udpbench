@@ -3,8 +3,7 @@ CFLAGS=		-D_DEFAULT_SOURCE -D_GNU_SOURCE \
 		-isystem /usr/local/include/bsd \
 		-Wall
 LDFLAGS=	-lbsd
-PREFIX?=        /usr/local
-BINDIR?=        ${PREFIX}/bin
+BINDIR?=        /usr/local/bin
 
 all:	udpbench
 
@@ -12,4 +11,4 @@ clean:
 	rm -f udpbench udpbench.o
 
 install:
-	install -s udpbench ${BINDIR}
+	install -s udpbench ${DESTDIR}${BINDIR}

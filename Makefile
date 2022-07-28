@@ -1,8 +1,7 @@
 PROG=		udpbench
 NOMAN=		yes
 WARNINGS=	yes
-PREFIX?=	/usr/local
-BINDIR?=	${PREFIX}/bin
+BINDIR?=	/usr/local/bin
 
 VERSION=	1.00
 CLEANFILES=	udpbench-${VERSION}.tar.gz
