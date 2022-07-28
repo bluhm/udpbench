@@ -4,6 +4,7 @@ CFLAGS=		-D_DEFAULT_SOURCE -D_GNU_SOURCE \
 		-Wall
 LDFLAGS=	-lbsd
 BINDIR?=        /usr/local/bin
+MANDIR?=        /usr/local/man/man
 
 all:	udpbench
 
@@ -11,4 +12,5 @@ clean:
 	rm -f udpbench udpbench.o
 
 install:
-	install -s udpbench ${DESTDIR}${BINDIR}
+	install -c -s udpbench ${DESTDIR}${BINDIR}
+	install -c udpbench.1 ${DESTDIR}${MANDIR}1

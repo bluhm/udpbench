@@ -1,6 +1,7 @@
-Revision history for udpbench udp network benchmark tool.
+Revision history for udpbench udp network benchmarking tool.
 
 1.01
+    - Write man page udpbench(1).
 
 1.00 2022-07-28
-	- Initial public release.
+    - Initial public release.

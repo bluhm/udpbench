@@ -1,0 +1,133 @@
+.\" $OpenBSD$
+.\"
+.\" Copyright (c) 2022 Alexander Bluhm <bluhm@genua.de>
+.\"
+.\" Permission to use, copy, modify, and distribute this software for any
+.\" purpose with or without fee is hereby granted, provided that the above
+.\" copyright notice and this permission notice appear in all copies.
+.\"
+.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\"
+.Dd $Mdocdate$
+.Dt UDPBENCH 1
+.Os
+.Sh NAME
+.Nm udpbench
+.Nd udp network benchmarking tool
+.Sh SYNOPSIS
+.Nm
+.Bk -words
+.Op Fl b Ar bufsize
+.Op Fl d Ar delaypacket
+.Op Fl l Ar length
+.Op Fl p Ar port
+.Op Fl R Ar remoteprog
+.Op Fl r Ar remotessh
+.Op Fl t Ar timeout
+.Cm send | recv
+.Op Ar hostname
+.Ek
+.Sh DESCRIPTION
+The
+.Nm
+benchmark tool sends or receives UDP packets between two IP end points.
+It measures the thoughput on both sides.
+The local action has to be given as
+.Cm send
+or
+.Cm recv .
+.Ar hostname
+is the IP address for
+.Xr connect 2
+when sending
+or
+.Xr bind 2
+when receiving.
+In the latter case it is optional, then the unspecified address is
+used.
+.Pp
+The options are as follows:
+.Bl -tag -width Ds
+.It Fl b Ar bufsize
+Set size of send or receive socket buffer.
+.It Fl d Ar delaypacket
+The value specifies the number of packets to send within a second.
+This adds a small delay between
+.Xr send 2
+system calls if packets would be generated too fast otherwise.
+.It Fl l Ar length
+Set the length of UDP payload for sending or the length of the
+userland buffer for receiving the packet.
+Per default the payload is empty.
+.It Fl p Ar port
+The destination UDP port is 12345 per default.
+When set to 0, a random port is used.
+.It Fl R Ar remoteprog
+When the remote side is started dynamically per
+.Ic ssh ,
+use this path for the
+.Nm
+program.
+Per default the remote program is invoked the same way as the local
+.Nm .
+.It Fl r Ar remotessh
+The receiving and sending process can be started manually or
+dynamically.
+If the
+.Ar remotessh
+location is given as
+.Cm user@host ,
+an
+.Nm
+process is started on the remote machine with the
+.Cm send
+and
+.Cm recv
+parameter excanged.
+.It Fl t Ar timeout
+Set the duration for sending packets.
+When receiving, the all packets have to arrive within this timeout
+plus two seconds.
+The default is 1 second.
+.El
+.Sh EXAMPLES
+Receive UDP packets on any address and port 12345.
+Run for 12 seconds to process all input.
+.D1 Nm Fl t Ar 10 Cm recv
+.Pp
+Send empty UDP packets to local host port 12345.
+Run for 10 seconds and process as much as possible.
+.D1 Nm Fl t Ar 10 Cm send Ar 127.0.0.1
+.Pp
+Test throughput of loopback interface for one second.
+Two
+.Nm
+processes are started, one with
+.Cm send
+and one dynamically with
+.Cm recv .
+As the destination port is random, but is the same for both sides,
+multiple instances can be started in parallel.
+.D1 Nm Fl r Ar localhost Fl p Ar 0 Cm send Ar 127.0.0.1
+.Pp
+Log into remove host and receive packets from there.
+.D1 Nm Fl r Ar root@remotehost Cm recv Ar localip
+.Pp
+Always the address of the receiving side has to be given.
+This sends the traffic in the opposite direction of the previous
+example.
+.D1 Nm Fl r Ar root@remotehost Cm send Ar remoteip
+.Sh SEE ALSO
+.Xr iperf3 1 ,
+.Xr tcpbench 1
+.Sh AUTHORS
+The
+.Nm
+program was written by
+.An Alexander Bluhm Aq Mt bluhm@genua.de .
