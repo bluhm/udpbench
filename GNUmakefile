@@ -12,5 +12,5 @@ clean:
 	rm -f udpbench udpbench.o
 
 install:
-	install -c -s udpbench ${DESTDIR}${BINDIR}
-	install -c udpbench.1 ${DESTDIR}${MANDIR}1
+	install -c -m 555 -s udpbench ${DESTDIR}${BINDIR}
+	install -c -m 444 udpbench.1 ${DESTDIR}${MANDIR}1
