@@ -503,7 +503,7 @@ ssh_bind(const char *remotessh, const char *progname,
 	int i = 0;
 
 	argv[i++] = "ssh";
-	argv[i++] = "-T";
+	argv[i++] = "-nT";
 	argv[i++] = (char *)remotessh;
 	argv[i++] = (char *)progname;
 	argv[i++] = "-b";
@@ -539,7 +539,7 @@ ssh_connect(const char *remotessh, const char *progname,
 	int i = 0;
 
 	argv[i++] = "ssh";
-	argv[i++] = "-T";
+	argv[i++] = "-nT";
 	argv[i++] = (char *)remotessh;
 	argv[i++] = (char *)progname;
 	argv[i++] = "-b";
