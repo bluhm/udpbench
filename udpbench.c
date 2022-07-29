@@ -23,6 +23,7 @@
 #include <netinet/ip6.h>
 #include <netinet/udp.h>
 
+#include <assert.h>
 #include <err.h>
 #include <errno.h>
 #include <limits.h>
@@ -498,31 +499,35 @@ ssh_bind(const char *remotessh, const char *progname,
     const char *hostname, const char *service,
     int buffersize, size_t udplength, int timeout)
 {
-	char *argv[14];
+	char *argv[15];
+	int i = 0;
 
-	argv[0] = "ssh";
-	argv[1] = (char *)remotessh;
-	argv[2] = (char *)progname;
-	argv[3] = "-b";
-	if (asprintf(&argv[4], "%d", buffersize) == -1)
+	argv[i++] = "ssh";
+	argv[i++] = "-T";
+	argv[i++] = (char *)remotessh;
+	argv[i++] = (char *)progname;
+	argv[i++] = "-b";
+	if (asprintf(&argv[i++], "%d", buffersize) == -1)
 		err(1, "asprintf buffer size");
-	argv[5] = "-l";
-	if (asprintf(&argv[6], "%zu", udplength) == -1)
+	argv[i++] = "-l";
+	if (asprintf(&argv[i++], "%zu", udplength) == -1)
 		err(1, "asprintf udp length");
-	argv[7] = "-p";
-	argv[8] = (char *)service;
-	argv[9] = "-t";
-	if (asprintf(&argv[10], "%d", timeout + 2) == -1)
+	argv[i++] = "-p";
+	argv[i++] = (char *)service;
+	argv[i++] = "-t";
+	if (asprintf(&argv[i++], "%d", timeout + 2) == -1)
 		err(1, "asprintf timeout");
-	argv[11] = "recv";
-	argv[12] = (char *)hostname;
-	argv[13] = NULL;
+	argv[i++] = "recv";
+	argv[i++] = (char *)hostname;
+	argv[i++] = NULL;
+
+	assert(i == sizeof(argv) / sizeof(argv[0]));
 
 	ssh_pipe(argv);
 
-	free(argv[4]);
-	free(argv[6]);
-	free(argv[10]);
+	free(argv[5]);
+	free(argv[7]);
+	free(argv[11]);
 }
 
 void
@@ -530,31 +535,35 @@ ssh_connect(const char *remotessh, const char *progname,
     const char *hostname, const char *service,
     int buffersize, size_t udplength, int timeout)
 {
-	char *argv[14];
+	char *argv[15];
+	int i = 0;
 
-	argv[0] = "ssh";
-	argv[1] = (char *)remotessh;
-	argv[2] = (char *)progname;
-	argv[3] = "-b";
-	if (asprintf(&argv[4], "%d", buffersize) == -1)
+	argv[i++] = "ssh";
+	argv[i++] = "-T";
+	argv[i++] = (char *)remotessh;
+	argv[i++] = (char *)progname;
+	argv[i++] = "-b";
+	if (asprintf(&argv[i++], "%d", buffersize) == -1)
 		err(1, "asprintf buffer size");
-	argv[5] = "-l";
-	if (asprintf(&argv[6], "%zu", udplength) == -1)
+	argv[i++] = "-l";
+	if (asprintf(&argv[i++], "%zu", udplength) == -1)
 		err(1, "asprintf udp length");
-	argv[7] = "-p";
-	argv[8] = (char *)service;
-	argv[9] = "-t";
-	if (asprintf(&argv[10], "%d", timeout) == -1)
+	argv[i++] = "-p";
+	argv[i++] = (char *)service;
+	argv[i++] = "-t";
+	if (asprintf(&argv[i++], "%d", timeout) == -1)
 		err(1, "asprintf timeout");
-	argv[11] = "send";
-	argv[12] = (char *)hostname;
-	argv[13] = NULL;
+	argv[i++] = "send";
+	argv[i++] = (char *)hostname;
+	argv[i++] = NULL;
+
+	assert(i == sizeof(argv) / sizeof(argv[0]));
 
 	ssh_pipe(argv);
 
-	free(argv[4]);
-	free(argv[6]);
-	free(argv[10]);
+	free(argv[5]);
+	free(argv[7]);
+	free(argv[11]);
 }
 
 void
