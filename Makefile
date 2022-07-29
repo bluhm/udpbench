@@ -8,6 +8,7 @@ CLEANFILES=	udpbench-${VERSION}.tar.gz
 
 .PHONY: dist udpbench-${VERSION}.tar.gz
 dist: udpbench-${VERSION}.tar.gz
+	@echo ${.OBJDIR}/udpbench-${VERSION}.tar.gz
 
 udpbench-${VERSION}.tar.gz:
 	rm -rf udpbench-${VERSION}
