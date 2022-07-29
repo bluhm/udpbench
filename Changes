@@ -1,6 +1,6 @@
 Revision history for udpbench udp network benchmarking tool.
 
-1.01
+1.01 2022-07-29
     - Write man page udpbench(1).
 
 1.00 2022-07-28
