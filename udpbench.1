@@ -62,19 +62,19 @@ This adds a small delay between
 .Xr send 2
 system calls if packets would be generated too fast otherwise.
 .It Fl l Ar length
-Set the length of UDP payload for sending or the length of the
-userland buffer for receiving the packet.
-Per default the payload is empty.
+Set length of the UDP payload for sending, or length of the userland
+buffer for receiving the packet.
+By default the payload is empty.
 .It Fl p Ar port
-The destination UDP port is 12345 per default.
+The destination UDP port is 12345 by default.
 When set to 0, a random port is used.
 .It Fl R Ar remoteprog
-When the remote side is started dynamically per
+When the remote side is started dynamically via
 .Ic ssh ,
 use this path for the
 .Nm
 program.
-Per default the remote program is invoked the same way as the local
+By default the remote program is invoked the same way as the local
 .Nm .
 .It Fl r Ar remotessh
 The receiving and sending process can be started manually or
@@ -92,9 +92,9 @@ and
 parameter excanged.
 .It Fl t Ar timeout
 Set the duration for sending packets.
-When receiving, the all packets have to arrive within this timeout
-plus two seconds.
-The default is 1 second.
+When receiving, all packets have to arrive within this timeout plus
+two seconds.
+By default is 1 second.
 .El
 .Sh EXAMPLES
 Receive UDP packets on any address and port 12345.
@@ -119,7 +119,7 @@ multiple instances can be started in parallel.
 Log into remove host and receive packets from there.
 .D1 Nm Fl r Ar root@remotehost Cm recv Ar localip
 .Pp
-Always the address of the receiving side has to be given.
+The address of the receiving side is not optional.
 This sends the traffic in the opposite direction of the previous
 example.
 .D1 Nm Fl r Ar root@remotehost Cm send Ar remoteip
