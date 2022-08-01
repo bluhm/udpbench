@@ -143,11 +143,13 @@ main(int argc, char *argv[])
 		usage();
 	if (argc < 1)
 		errx(1, "send or recv required");
-	if (strcmp(argv[0], "send") == 0)
+	if (strcmp(argv[0], "send") == 0) {
 		sendmode = 1;
-	else if (strcmp(argv[0], "recv") == 0)
+		setprogname("udpbench send");
+	} else if (strcmp(argv[0], "recv") == 0) {
 		sendmode = 0;
-	else
+		setprogname("udpbench recv");
+	} else
 		errx(1, "bad send or recv: %s", argv[0]);
 
 	if (sendmode && argc < 2)
