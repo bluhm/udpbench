@@ -209,7 +209,12 @@ main(int argc, char *argv[])
 		}
 	} else {
 		udp_bind(hostname, service);
-		udp_getsockname(&localaddr, &localport);
+		if (divert) {
+			udp_getsockname(NULL, NULL);
+			localaddr = hostname;
+			localport = service;
+		} else
+			udp_getsockname(&localaddr, &localport);
 		udp_setbuffersize(SO_RCVBUF, buffersize);
 		if (remotessh != NULL) {
 			ssh_connect(remotessh, progname, localaddr, localport,
@@ -223,8 +228,10 @@ main(int argc, char *argv[])
 		if (timeout > 0)
 			alarm(timeout + 2);
 		udp_receive(udppayload, udplength);
-		free(localaddr);
-		free(localport);
+		if (!divert) {
+			free(localaddr);
+			free(localport);
+		}
 	}
 	if (remotessh != NULL)
 		ssh_wait();
@@ -280,6 +287,8 @@ udp_bind(const char *host, const char *service)
 				sin = (struct sockaddr_in *)res->ai_addr;
 				memset(&sin->sin_addr, 0,
 				    sizeof(struct in_addr));
+				if (sin->sin_port == 0)
+					errx(1, "divert needs bind port");
 			}
 			if (res->ai_family == AF_INET) {
 				struct sockaddr_in6 *sin6;
@@ -287,6 +296,8 @@ udp_bind(const char *host, const char *service)
 				sin6 = (struct sockaddr_in6 *)res->ai_addr;
 				memset(&sin6->sin6_addr, 0,
 				    sizeof(struct in6_addr));
+				if (sin6->sin6_port == 0)
+					errx(1, "divert needs bind port");
 			}
 		}
 		if (bind(udp_socket, res->ai_addr, res->ai_addrlen) == -1) {
