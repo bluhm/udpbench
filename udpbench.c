@@ -67,7 +67,7 @@ usage(void)
 	    "[-t timeout] send|recv [hostname]\n"
 	    "    -b bufsize     set size of send or receive buffer\n"
 #ifdef IPPROTO_DIVERT
-	    "    -D             use divert packet socket for receive \n"
+	    "    -D             use pf divert packet for receive\n"
 #endif
 	    "    -d delaypacket delay sending to packets per second rate\n"
 	    "    -l length      set length of udp payload\n"
@@ -192,7 +192,10 @@ main(int argc, char *argv[])
 			if (pledge("stdio dns inet", NULL) == -1)
 				err(1, "pledge");
 #endif
-			ssh_getpeername(&hostname, &service);
+			if (divert)
+				ssh_getpeername(NULL, NULL);
+			else
+				ssh_getpeername(&hostname, &service);
 		}
 		udp_connect(hostname, service);
 		udp_getsockname(NULL, NULL);
@@ -200,7 +203,7 @@ main(int argc, char *argv[])
 		if (timeout > 0)
 			alarm(timeout);
 		udp_send(udppayload, udplength, delaypacket);
-		if (remotessh != NULL) {
+		if (remotessh != NULL && !divert) {
 			free(hostname);
 			free(service);
 		}
@@ -255,12 +258,13 @@ udp_bind(const char *host, const char *service)
 		errx(1, "getaddrinfo: %s", gai_strerror(error));
 	udp_socket = -1;
 	for (res = res0; res; res = res->ai_next) {
-#ifdef IPPROTO_DIVERT
 		if (divert) {
+			/* pf divert packet uses raw socket */
 			res->ai_socktype = SOCK_RAW;
+#ifdef IPPROTO_DIVERT
 			res->ai_protocol = IPPROTO_DIVERT;
-		}
 #endif
+		}
 		udp_socket = socket(res->ai_family, res->ai_socktype,
 		    res->ai_protocol);
 		if (udp_socket == -1) {
@@ -268,6 +272,23 @@ udp_bind(const char *host, const char *service)
 			continue;
 		}
 
+		if (divert) {
+			/* divert packet socket is bound to port only */
+			if (res->ai_family == AF_INET) {
+				struct sockaddr_in *sin;
+
+				sin = (struct sockaddr_in *)res->ai_addr;
+				memset(&sin->sin_addr, 0,
+				    sizeof(struct in_addr));
+			}
+			if (res->ai_family == AF_INET) {
+				struct sockaddr_in6 *sin6;
+
+				sin6 = (struct sockaddr_in6 *)res->ai_addr;
+				memset(&sin6->sin6_addr, 0,
+				    sizeof(struct in6_addr));
+			}
+		}
 		if (bind(udp_socket, res->ai_addr, res->ai_addrlen) == -1) {
 			cause = "bind";
 			save_errno = errno;
@@ -302,12 +323,6 @@ udp_connect(const char *host, const char *service)
 		errx(1, "getaddrinfo: %s", gai_strerror(error));
 	udp_socket = -1;
 	for (res = res0; res; res = res->ai_next) {
-#ifdef IPPROTO_DIVERT
-		if (divert) {
-			res->ai_socktype = SOCK_RAW;
-			res->ai_protocol = IPPROTO_DIVERT;
-		}
-#endif
 		udp_socket = socket(res->ai_family, res->ai_socktype,
 		    res->ai_protocol);
 		if (udp_socket == -1) {
@@ -529,8 +544,8 @@ ssh_bind(const char *remotessh, const char *progname,
     const char *hostname, const char *service,
     int buffersize, size_t udplength, int timeout)
 {
-	char *argv[15];
-	int i = 0;
+	char *argv[16];
+	size_t i = 0;
 
 	argv[i++] = "ssh";
 	argv[i++] = "-nT";
@@ -547,11 +562,13 @@ ssh_bind(const char *remotessh, const char *progname,
 	argv[i++] = "-t";
 	if (asprintf(&argv[i++], "%d", timeout + 2) == -1)
 		err(1, "asprintf timeout");
+	if (divert)
+		argv[i++] = "-D";
 	argv[i++] = "recv";
 	argv[i++] = (char *)hostname;
 	argv[i++] = NULL;
 
-	assert(i == sizeof(argv) / sizeof(argv[0]));
+	assert(i <= sizeof(argv) / sizeof(argv[0]));
 
 	ssh_pipe(argv);
 
@@ -566,7 +583,7 @@ ssh_connect(const char *remotessh, const char *progname,
     int buffersize, size_t udplength, int timeout)
 {
 	char *argv[15];
-	int i = 0;
+	size_t i = 0;
 
 	argv[i++] = "ssh";
 	argv[i++] = "-nT";
