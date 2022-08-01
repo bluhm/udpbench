@@ -37,6 +37,7 @@
 
 sig_atomic_t alarm_signaled;
 
+int divert;
 int udp_family;
 int udp_socket = -1;
 FILE *ssh_stream;
@@ -65,6 +66,9 @@ usage(void)
 	    "[-l length] [-p port] [-R remoteprog] [-r remotessh] "
 	    "[-t timeout] send|recv [hostname]\n"
 	    "    -b bufsize     set size of send or receive buffer\n"
+#ifdef IPPROTO_DIVERT
+	    "    -D             use divert packet socket for receive \n"
+#endif
 	    "    -d delaypacket delay sending to packets per second rate\n"
 	    "    -l length      set length of udp payload\n"
 	    "    -p port        udp port, default 12345, random 0\n"
@@ -97,7 +101,7 @@ main(int argc, char *argv[])
 	if (setvbuf(stdout, NULL, _IOLBF, 0) != 0)
 		err(1, "setvbuf");
 
-	while ((ch = getopt(argc, argv, "b:d:l:p:R:r:t:")) != -1) {
+	while ((ch = getopt(argc, argv, "b:Dd:l:p:R:r:t:")) != -1) {
 		switch (ch) {
 		case 'b':
 			buffersize = strtonum(optarg, 0, INT_MAX, &errstr);
@@ -105,6 +109,11 @@ main(int argc, char *argv[])
 				errx(1, "buffer size is %s: %s",
 				    errstr, optarg);
 			break;
+#ifdef IPPROTO_DIVERT
+		case 'D':
+			divert = 1;
+			break;
+#endif
 		case 'd':
 			delaypacket = strtonum(optarg, 0, LONG_MAX, &errstr);
 			if (errstr != NULL)
@@ -169,7 +178,9 @@ main(int argc, char *argv[])
 	if (sigaction(SIGALRM, &act, NULL) == -1)
 		err(1, "sigaction");
 
-	udppayload = malloc(udplength + 1);
+	/* divert packet contains header, allocate enough */
+	udppayload = malloc(sizeof(struct ip6_hdr) + sizeof(struct udphdr) +
+	    udplength + 1);
 	if (udppayload == NULL)
 		err(1, "malloc udp payload");
 	if (sendmode) {
@@ -244,6 +255,12 @@ udp_bind(const char *host, const char *service)
 		errx(1, "getaddrinfo: %s", gai_strerror(error));
 	udp_socket = -1;
 	for (res = res0; res; res = res->ai_next) {
+#ifdef IPPROTO_DIVERT
+		if (divert) {
+			res->ai_socktype = SOCK_RAW;
+			res->ai_protocol = IPPROTO_DIVERT;
+		}
+#endif
 		udp_socket = socket(res->ai_family, res->ai_socktype,
 		    res->ai_protocol);
 		if (udp_socket == -1) {
@@ -285,6 +302,12 @@ udp_connect(const char *host, const char *service)
 		errx(1, "getaddrinfo: %s", gai_strerror(error));
 	udp_socket = -1;
 	for (res = res0; res; res = res->ai_next) {
+#ifdef IPPROTO_DIVERT
+		if (divert) {
+			res->ai_socktype = SOCK_RAW;
+			res->ai_protocol = IPPROTO_DIVERT;
+		}
+#endif
 		udp_socket = socket(res->ai_family, res->ai_socktype,
 		    res->ai_protocol);
 		if (udp_socket == -1) {
@@ -424,10 +447,18 @@ udp_receive(char *payload, size_t udplen)
 	socklen_t len;
 	double bits;
 
+	length = (udp_family == AF_INET) ?
+	    sizeof(struct ip) : sizeof(struct ip6_hdr);
+	length += sizeof(struct udphdr);
+	if (divert) {
+		udplen += length;
+		length = 0;
+	}
 	/* wait for the first packet to start timing */
 	rcvlen = recv(udp_socket, payload, udplen + 1, 0);
 	if (rcvlen == -1)
 		err(1, "recv 1");
+	length += rcvlen;
 
 	if (gettimeofday(&begin, NULL) == -1)
 		err(1, "gettimeofday begin");
@@ -470,9 +501,6 @@ udp_receive(char *payload, size_t udplen)
 	if (gettimeofday(&end, NULL) == -1)
 		err(1, "gettimeofday end");
 
-	length = (udp_family == AF_INET) ?
-	    sizeof(struct ip) : sizeof(struct ip6_hdr);
-	length += sizeof(struct udphdr) + rcvlen;
 	if (timerisset(&idle)) {
 		timersub(&idle, &begin, &duration);
 		timersub(&end, &idle, &idle);
