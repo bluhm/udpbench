@@ -23,6 +23,7 @@
 .Sh SYNOPSIS
 .Nm
 .Bk -words
+.Op Fl D
 .Op Fl b Ar bufsize
 .Op Fl d Ar delaypacket
 .Op Fl l Ar length
@@ -56,6 +57,21 @@ The options are as follows:
 .Bl -tag -width Ds
 .It Fl b Ar bufsize
 Set size of send or receive socket buffer.
+.It Fl D
+OpenBSD
+.Xr pf 4
+.Ic divert-packet
+is used to receive packets on divert socket.
+The pf rule has to be configured manually, the option only changes
+the socket type on the
+.Cm recv
+side.
+In
+.Cm send
+mode this option has no effect on local sending.
+With dynamic
+.Ic ssh
+the option is passed to the remote process.
 .It Fl d Ar delaypacket
 The value specifies the number of packets to send within a second.
 This adds a small delay between
@@ -123,6 +139,12 @@ The address of the receiving side is not optional.
 This sends the traffic in the opposite direction of the previous
 example.
 .D1 Nm Fl r Ar root@remotehost Cm send Ar remoteip
+.Pp
+Receive packets from remote host and divert them to local socket.
+This needs configuration in
+.Xr pf.conf 5 .
+.D1 Ic pass Ic proto Ic udp Ic to Ar localip Ic port Ar 1234 Ic divert-packet Ic port Ar 1234
+.D1 Nm Fl D Fl p Ar 1234 Fl r Ar root@remotehost Cm recv Ar localip
 .Sh SEE ALSO
 .Xr iperf3 1 ,
 .Xr tcpbench 1
