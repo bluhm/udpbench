@@ -66,9 +66,7 @@ usage(void)
 	    "[-l length] [-p port] [-R remoteprog] [-r remotessh] "
 	    "[-t timeout] send|recv [hostname]\n"
 	    "    -b bufsize     set size of send or receive buffer\n"
-#ifdef IPPROTO_DIVERT
 	    "    -D             use pf divert packet for receive\n"
-#endif
 	    "    -d delaypacket delay sending to packets per second rate\n"
 	    "    -l length      set length of udp payload\n"
 	    "    -p port        udp port, default 12345, random 0\n"
@@ -109,11 +107,9 @@ main(int argc, char *argv[])
 				errx(1, "buffer size is %s: %s",
 				    errstr, optarg);
 			break;
-#ifdef IPPROTO_DIVERT
 		case 'D':
 			divert = 1;
 			break;
-#endif
 		case 'd':
 			delaypacket = strtonum(optarg, 0, LONG_MAX, &errstr);
 			if (errstr != NULL)
@@ -270,6 +266,8 @@ udp_bind(const char *host, const char *service)
 			res->ai_socktype = SOCK_RAW;
 #ifdef IPPROTO_DIVERT
 			res->ai_protocol = IPPROTO_DIVERT;
+#else
+			errx(1, "IPPROTO_DIVERT not defined");
 #endif
 		}
 		udp_socket = socket(res->ai_family, res->ai_socktype,
