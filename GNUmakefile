@@ -9,12 +9,15 @@ MANDIR?=        /usr/local/man/man
 .PHONY: all clean install
 all:	udpbench
 
+udpbench: udpbench.c
+	$(CC) $(CFLAGS) $< $(LDFLAGS) -o $@
+
 clean:
 	rm -f udpbench udpbench.o out
 
 install:
-	install -c -m 555 -s udpbench ${DESTDIR}${BINDIR}
-	install -c -m 444 udpbench.1 ${DESTDIR}${MANDIR}1
+	install -c -m 555 -s udpbench -D -t ${DESTDIR}${BINDIR}
+	install -c -m 444 udpbench.1 -D -t ${DESTDIR}${MANDIR}1
 
 .PHONY: test test-localhost test-localhost6
 test: test-localhost test-localhost6
