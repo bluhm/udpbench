@@ -69,13 +69,13 @@ static void
 usage(void)
 {
 	fprintf(stderr, "usage: udpbench [-B bitrate] [-b bufsize] "
-	    "[-d delaypacket] [-l length] [-p port] [-R remoteprog] "
+	    "[-l length] [-P packetrate] [-p port] [-R remoteprog] "
 	    "[-r remotessh] [-t timeout] send|recv [hostname]\n"
-	    "    -B bitrate	set bits per seconds send rate\n"
+	    "    -B bitrate	bits per seconds send rate\n"
 	    "    -b bufsize     set size of send or receive buffer\n"
 	    "    -D             use pf divert packet for receive\n"
-	    "    -d delaypacket delay sending to packets per second rate\n"
 	    "    -l length      set length of udp payload\n"
+	    "    -P packetrate  packets per second send rate\n"
 	    "    -p port        udp port, default 12345, random 0\n"
 	    "    -R remoteprog  path of udpbench tool on remote side\n"
 	    "    -r remotessh   ssh host to start udpbench on remote side\n"
@@ -95,7 +95,7 @@ main(int argc, char *argv[])
 	size_t udplength = 0;
 	int ch, buffersize = 0, timeout = 1, sendmode;
 	unsigned long long bitrate = 0;
-	unsigned long delaypacket = 0;
+	unsigned long packetrate = 0;
 	const char *progname = argv[0];
 	char *hostname = NULL, *service = "12345", *remotessh = NULL;
 	char *localaddr, *localport;
@@ -107,12 +107,12 @@ main(int argc, char *argv[])
 	if (setvbuf(stdout, NULL, _IOLBF, 0) != 0)
 		err(1, "setvbuf");
 
-	while ((ch = getopt(argc, argv, "B:b:Dd:l:p:R:r:t:")) != -1) {
+	while ((ch = getopt(argc, argv, "B:b:Dl:P:p:R:r:t:")) != -1) {
 		switch (ch) {
 		case 'B':
 			bitrate = strtonum(optarg, 0, LLONG_MAX, &errstr);
 			if (errstr != NULL)
-				errx(1, "bitrate is %s: %s",
+				errx(1, "bits per second rate is %s: %s",
 				    errstr, optarg);
 			break;
 		case 'b':
@@ -124,16 +124,16 @@ main(int argc, char *argv[])
 		case 'D':
 			divert = 1;
 			break;
-		case 'd':
-			delaypacket = strtonum(optarg, 0, LONG_MAX, &errstr);
-			if (errstr != NULL)
-				errx(1, "delay packets per second is %s: %s",
-				    errstr, optarg);
-			break;
 		case 'l':
 			udplength = strtonum(optarg, 0, IP_MAXPACKET, &errstr);
 			if (errstr != NULL)
 				errx(1, "payload length is %s: %s",
+				    errstr, optarg);
+			break;
+		case 'P':
+			packetrate = strtonum(optarg, 0, LONG_MAX, &errstr);
+			if (errstr != NULL)
+				errx(1, "packets per second rate is %s: %s",
 				    errstr, optarg);
 			break;
 		case 'p':
@@ -176,10 +176,10 @@ main(int argc, char *argv[])
 	if (argc >= 2)
 		hostname = argv[1];
 
-	if (bitrate && delaypacket)
-		errx(1, "either bitrate or delaypacket may be given");
-	if (!sendmode && remotessh == NULL && (bitrate || delaypacket))
-		errx(1, "bitrate or delaypacket only allowed for send");
+	if (bitrate && packetrate)
+		errx(1, "either bitrate or packetrate may be given");
+	if (!sendmode && remotessh == NULL && (bitrate || packetrate))
+		errx(1, "bitrate or packetrate only allowed for send");
 
 #ifdef __OpenBSD__
 	if (remotessh == NULL) {
@@ -220,14 +220,14 @@ main(int argc, char *argv[])
 			unsigned long framelength;
 
 			framelength = udp2etherlength(udplength, udp_family, 0);
-			delaypacket = bitrate / 8 / framelength;
-			if (delaypacket == 0)
+			packetrate = bitrate / 8 / framelength;
+			if (packetrate == 0)
 				errx(1, "bitrate %llu too small for frame %lu",
 				    bitrate, framelength);
 		}
 		if (timeout > 0)
 			alarm(timeout);
-		udp_send(udppayload, udplength, delaypacket);
+		udp_send(udppayload, udplength, packetrate);
 		if (remotessh != NULL && !divert) {
 			free(hostname);
 			free(service);
@@ -432,7 +432,7 @@ udp_setbuffersize(int name, int size)
 }
 
 void
-udp_send(const char *payload, size_t udplen, unsigned long delaypacket)
+udp_send(const char *payload, size_t udplen, unsigned long packetrate)
 {
 	struct timeval begin, end, duration;
 	struct timespec wait;
@@ -453,7 +453,7 @@ udp_send(const char *payload, size_t udplen, unsigned long delaypacket)
 			err(1, "send");
 		}
 		packet++;
-		if (delaypacket) {
+		if (packetrate) {
 			if (!timerisset(&end)) {
 				if (gettimeofday(&end, NULL) == -1)
 					err(1, "gettimeofday delay");
@@ -461,7 +461,7 @@ udp_send(const char *payload, size_t udplen, unsigned long delaypacket)
 			timersub(&end, &begin, &duration);
 			if (!timerisset(&duration))
 				duration.tv_usec = 1;
-			expectduration = (double)packet / (double)delaypacket;
+			expectduration = (double)packet / (double)packetrate;
 			waittime = expectduration - (double)duration.tv_sec -
 			    (double)duration.tv_usec / 1000000.;
 			wait.tv_sec = waittime;
