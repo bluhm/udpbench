@@ -51,6 +51,12 @@ void udp_setbuffersize(int, int);
 void udp_send(const char *, size_t, unsigned long);
 void udp_receive(char *, size_t);
 void udp_close(void);
+
+void print_status(const char *, unsigned long, unsigned long, unsigned long,
+    int, const struct timeval *);
+unsigned long udp2iplength(unsigned long, int, unsigned long *);
+unsigned long udp2etherlength(unsigned long , int, int);
+
 void ssh_bind(const char *, const char *, const char *, const char *,
     int, size_t , int);
 void ssh_connect(const char *, const char *, const char *, const char *,
@@ -62,9 +68,10 @@ void ssh_wait(void);
 static void
 usage(void)
 {
-	fprintf(stderr, "usage: udpbench [-b bufsize] [-d delaypacket] "
-	    "[-l length] [-p port] [-R remoteprog] [-r remotessh] "
-	    "[-t timeout] send|recv [hostname]\n"
+	fprintf(stderr, "usage: udpbench [-B bitrate] [-b bufsize] "
+	    "[-d delaypacket] [-l length] [-p port] [-R remoteprog] "
+	    "[-r remotessh] [-t timeout] send|recv [hostname]\n"
+	    "    -B bitrate	set bits per seconds send rate\n"
 	    "    -b bufsize     set size of send or receive buffer\n"
 	    "    -D             use pf divert packet for receive\n"
 	    "    -d delaypacket delay sending to packets per second rate\n"
@@ -87,6 +94,7 @@ main(int argc, char *argv[])
 	char *udppayload;
 	size_t udplength = 0;
 	int ch, buffersize = 0, timeout = 1, sendmode;
+	unsigned long long bitrate = 0;
 	unsigned long delaypacket = 0;
 	const char *progname = argv[0];
 	char *hostname = NULL, *service = "12345", *remotessh = NULL;
@@ -99,8 +107,14 @@ main(int argc, char *argv[])
 	if (setvbuf(stdout, NULL, _IOLBF, 0) != 0)
 		err(1, "setvbuf");
 
-	while ((ch = getopt(argc, argv, "b:Dd:l:p:R:r:t:")) != -1) {
+	while ((ch = getopt(argc, argv, "B:b:Dd:l:p:R:r:t:")) != -1) {
 		switch (ch) {
+		case 'B':
+			bitrate = strtonum(optarg, 0, LLONG_MAX, &errstr);
+			if (errstr != NULL)
+				errx(1, "bitrate is %s: %s",
+				    errstr, optarg);
+			break;
 		case 'b':
 			buffersize = strtonum(optarg, 0, INT_MAX, &errstr);
 			if (errstr != NULL)
@@ -161,6 +175,12 @@ main(int argc, char *argv[])
 		errx(1, "hostname required for send");
 	if (argc >= 2)
 		hostname = argv[1];
+
+	if (bitrate && delaypacket)
+		errx(1, "either bitrate or delaypacket may be given");
+	if (!sendmode && remotessh == NULL && (bitrate || delaypacket))
+		errx(1, "bitrate or delaypacket only allowed for send");
+
 #ifdef __OpenBSD__
 	if (remotessh == NULL) {
 		if (pledge("stdio dns inet", NULL) == -1)
@@ -196,6 +216,15 @@ main(int argc, char *argv[])
 		udp_connect(hostname, service);
 		udp_getsockname(NULL, NULL);
 		udp_setbuffersize(SO_SNDBUF, buffersize);
+		if (bitrate) {
+			unsigned long framelength;
+
+			framelength = udp2etherlength(udplength, udp_family, 0);
+			delaypacket = bitrate / 8 / framelength;
+			if (delaypacket == 0)
+				errx(1, "bitrate %llu too small for frame %lu",
+				    bitrate, framelength);
+		}
 		if (timeout > 0)
 			alarm(timeout);
 		udp_send(udppayload, udplength, delaypacket);
@@ -408,8 +437,7 @@ udp_send(const char *payload, size_t udplen, unsigned long delaypacket)
 	struct timeval begin, end, duration;
 	struct timespec wait;
 	unsigned long syscall, packet;
-	size_t length;
-	double bits, expectduration, waittime;
+	double expectduration, waittime;
 
 	if (gettimeofday(&begin, NULL) == -1)
 		err(1, "gettimeofday begin");
@@ -450,15 +478,8 @@ udp_send(const char *payload, size_t udplen, unsigned long delaypacket)
 	if (gettimeofday(&end, NULL) == -1)
 		err(1, "gettimeofday end");
 
-	length = (udp_family == AF_INET) ?
-	    sizeof(struct ip) : sizeof(struct ip6_hdr);
-	length += sizeof(struct udphdr) + udplen;
 	timersub(&end, &begin, &duration);
-	bits = (double)packet * length * 8;
-	bits /= (double)duration.tv_sec + (double)duration.tv_usec / 1000000.;
-	printf("send: syscall %lu, packet %lu, length %zu, "
-	    "duration %lld.%06ld, bit/s %g\n", syscall, packet, length,
-	    (long long)duration.tv_sec, duration.tv_usec, bits);
+	print_status("send", syscall, packet, udplen, udp_family, &duration);
 }
 
 void
@@ -466,23 +487,28 @@ udp_receive(char *payload, size_t udplen)
 {
 	struct timeval begin, idle, end, duration, timeo;
 	unsigned long syscall, packet, bored;
-	size_t length;
+	unsigned long headerlen, paylen;
 	ssize_t rcvlen;
 	socklen_t len;
-	double bits;
 
-	length = (udp_family == AF_INET) ?
-	    sizeof(struct ip) : sizeof(struct ip6_hdr);
-	length += sizeof(struct udphdr);
 	if (divert) {
-		udplen += length;
-		length = 0;
+		headerlen = sizeof(struct udphdr) + ((udp_family == AF_INET) ?
+		    sizeof(struct ip) : sizeof(struct ip6_hdr));
+		udplen += headerlen;
 	}
 	/* wait for the first packet to start timing */
 	rcvlen = recv(udp_socket, payload, udplen + 1, 0);
 	if (rcvlen == -1)
 		err(1, "recv 1");
-	length += rcvlen;
+	paylen = rcvlen;
+	if (paylen > udplen)
+		warnx("receive packet truncated %zd", rcvlen);
+	if (divert) {
+		if (paylen < headerlen)
+			errx(1, "receive length %zd too short for header",
+			    rcvlen);
+		paylen -= headerlen;
+	}
 
 	if (gettimeofday(&begin, NULL) == -1)
 		err(1, "gettimeofday begin");
@@ -531,11 +557,7 @@ udp_receive(char *payload, size_t udplen)
 	} else {
 		timersub(&end, &begin, &duration);
 	}
-	bits = (double)packet * length * 8;
-	bits /= (double)duration.tv_sec + (double)duration.tv_usec / 1000000.;
-	printf("recv: syscall %lu, packet %lu, length %zu, "
-	    "duration %lld.%06ld, bit/s %g\n", syscall, packet, length,
-	    (long long)duration.tv_sec, duration.tv_usec, bits);
+	print_status("recv", syscall, packet, paylen, udp_family, &duration);
 	if (idle.tv_sec < 1)
 		errx(1, "not enough idle time: %lld.%06ld",
 		    (long long)idle.tv_sec, idle.tv_usec);
@@ -546,6 +568,111 @@ udp_close(void)
 {
 	if (close(udp_socket) == -1)
 		err(1, "close");
+}
+
+void
+print_status(const char *action, unsigned long syscall, unsigned long packet,
+    unsigned long paylen, int af, const struct timeval *duration)
+{
+	unsigned long framelen;
+	double bits;
+
+	framelen = udp2etherlength(paylen, af, 0);
+	bits = (double)packet * framelen * 8;
+	bits /= (double)duration->tv_sec + (double)duration->tv_usec / 1000000;
+	printf("%s: syscall %lu, packet %lu, payload %lu, frame %lu, "
+	    "duration %lld.%06ld, bit/s %g\n", action, syscall, packet, paylen,
+	    framelen, (long long)duration->tv_sec, duration->tv_usec, bits);
+}
+
+unsigned long
+udp2iplength(unsigned long payload, int af, unsigned long *packets)
+{
+	unsigned long iplength;
+
+	/* IPv4 header */
+	if (af == AF_INET)
+		iplength = 20;
+	/* IPv6 header */
+	if (af == AF_INET6)
+		iplength = 40;
+	/* UDP header, payload */
+	iplength += 8 + payload;
+
+	/* maximum ethernet payload */
+	if (iplength > 1500) {
+		if (af == AF_INET) {
+			/* length without IPv4 header, align to fragment */
+			*packets = (iplength - 20) / ((1500 - 20) & ~7);
+			/* final fragment */
+			iplength = (iplength - 20) % ((1500 - 20) & ~7);
+			if (iplength == 0) {
+				/* full sized fragments */
+				iplength = *packets * (((1500 - 20) & ~7) + 20);
+			} else {
+				/* final fragment header, full fragments */
+				iplength += 20 +
+				    (*packets * (((1500 - 20) & ~7) + 20));
+				++*packets;
+			}
+		}
+		if (af == AF_INET6) {
+			/* length without IPv6, fragement header, alignment */
+			*packets = (iplength - 40) / ((1500 - 40 - 8) & ~7);
+			/* final fragment */
+			iplength = (iplength - 40) % ((1500 - 40 - 8) & ~7);
+			if (iplength == 0) {
+				/* full sized fragments */
+				iplength = *packets * (1500 & ~7);
+			} else {
+				/* final fragment header, full fragments */
+				iplength += 40 + 8 + (*packets * (1500 & ~7));
+				++*packets;
+			}
+		}
+	} else
+		*packets = 1;
+
+	return iplength;
+}
+
+unsigned long
+udp2etherlength(unsigned long payload, int af, int vlan)
+{
+	unsigned long packetlength, fragmentlength;
+	unsigned long framelength, frames, padding;
+
+	packetlength = udp2iplength(payload, af, &frames);
+
+	/* https://en.wikipedia.org/wiki/Ethernet_frame */
+
+	/* destination MAC, source MAC, EtherType */
+	framelength = 6 + 6 + 2;
+	/* TPID, VLAN */
+	if (vlan)
+		framelength += 4;
+	/* frame check sequence */
+	framelength += 4;
+	/* minimum frame transmission */
+	if (af == AF_INET)
+		fragmentlength = ((1500 - 20) & ~7) + 20;
+	if (af == AF_INET6)
+		fragmentlength = 1500 & ~7;  /* 40 + 8 divisible by 8 */
+	if (framelength + (packetlength % fragmentlength) < 64)
+		padding = 64 - framelength - (packetlength % fragmentlength);
+	else
+		padding = 0;
+
+	/* preamble, start frame delimiter */
+	framelength += 7 + 1;
+	/* interpacket gap */
+	framelength += 12;
+
+	framelength *= frames;
+	/* ip headers, fragment overhead, udp header, payload, ether padding */
+	framelength += packetlength + padding;
+
+	return framelength;
 }
 
 void

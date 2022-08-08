@@ -24,6 +24,7 @@
 .Nm
 .Bk -words
 .Op Fl D
+.Op Fl B Ar bitrate
 .Op Fl b Ar bufsize
 .Op Fl d Ar delaypacket
 .Op Fl l Ar length
@@ -55,6 +56,13 @@ used.
 .Pp
 The options are as follows:
 .Bl -tag -width Ds
+.It Fl B Ar bitrate
+The value specifies the number of bits to send over the wire within
+a second.
+The size of the ethernet frame is calculaed from UDP payload length.
+This adds a small delay between
+.Xr send 2
+system calls if packets would be generated too fast otherwise.
 .It Fl b Ar bufsize
 Set size of send or receive socket buffer.
 .It Fl D
