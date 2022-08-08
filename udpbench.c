@@ -653,15 +653,20 @@ udp2etherlength(unsigned long payload, int af, int vlan)
 		framelength += 4;
 	/* frame check sequence */
 	framelength += 4;
+
 	/* minimum frame transmission */
 	if (af == AF_INET)
 		fragmentlength = ((1500 - 20) & ~7) + 20;
 	if (af == AF_INET6)
 		fragmentlength = 1500 & ~7;  /* 40 + 8 divisible by 8 */
-	if (framelength + (packetlength % fragmentlength) < 64)
+	if (framelength + packetlength < 64) {
+		padding = 64 - framelength - packetlength;
+	} else if (packetlength > 1500 &&
+	    framelength + (packetlength % fragmentlength) < 64) {
 		padding = 64 - framelength - (packetlength % fragmentlength);
-	else
+	} else {
 		padding = 0;
+	}
 
 	/* preamble, start frame delimiter */
 	framelength += 7 + 1;
