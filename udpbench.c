@@ -574,15 +574,17 @@ void
 print_status(const char *action, unsigned long syscall, unsigned long packet,
     unsigned long paylen, int af, const struct timeval *duration)
 {
-	unsigned long framelen;
+	unsigned long pkts, iplen, framelen;
 	double bits;
 
+	iplen = udp2iplength(paylen, af, &pkts);
 	framelen = udp2etherlength(paylen, af, 0);
 	bits = (double)packet * framelen * 8;
 	bits /= (double)duration->tv_sec + (double)duration->tv_usec / 1000000;
-	printf("%s: syscall %lu, packet %lu, payload %lu, frame %lu, "
-	    "duration %lld.%06ld, bit/s %g\n", action, syscall, packet, paylen,
-	    framelen, (long long)duration->tv_sec, duration->tv_usec, bits);
+	printf("%s: syscall %lu, packet %lu, payload %lu, "
+	    "iplen %lu, frame %lu, duration %lld.%06ld, bit/s %g\n",
+	    action, syscall, packet, paylen, iplen, framelen,
+	    (long long)duration->tv_sec, duration->tv_usec, bits);
 }
 
 unsigned long
