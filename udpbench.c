@@ -581,8 +581,8 @@ print_status(const char *action, unsigned long syscall, unsigned long packet,
 	framelen = udp2etherlength(paylen, af, 0);
 	bits = (double)packet * framelen * 8;
 	bits /= (double)duration->tv_sec + (double)duration->tv_usec / 1000000;
-	printf("%s: syscall %lu, packet %lu, payload %lu, "
-	    "iplen %lu, frame %lu, duration %lld.%06ld, bit/s %g\n",
+	printf("%s: syscalls %lu, packets %lu, payload %lu, "
+	    "ip %lu, ether %lu, duration %lld.%06ld, bit/s %g\n",
 	    action, syscall, packet, paylen, iplen, framelen,
 	    (long long)duration->tv_sec, duration->tv_usec, bits);
 }
