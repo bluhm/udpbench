@@ -1,6 +1,12 @@
 Revision history for udpbench udp network benchmarking tool.
 
-1.03
+1.03 2022-08-10
+    - Portable GNU makefile for Debian and Ubuntu.
+    - Fix calculation of frame length for full size IP packet.
+    - Delay sender with -B bitrate or -P packetrate.
+      Warning: -d delaypacket has been renamed.
+    - Print length of IP packets and Ether frames in status line.
+      Warning: Format of status line has changed.
 
 1.02 2022-08-01
     - Option -D receives udp packets from divert raw socket.
