@@ -1,5 +1,7 @@
 Revision history for udpbench udp network benchmarking tool.
 
+1.04
+
 1.03 2022-08-10
     - Portable GNU makefile for Debian and Ubuntu.
     - Fix calculation of frame length for full size IP packet.
