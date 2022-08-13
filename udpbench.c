@@ -37,7 +37,7 @@
 
 sig_atomic_t alarm_signaled;
 
-int divert;
+int divert, hopbyhop;
 int udp_family;
 int udp_socket = -1;
 FILE *ssh_stream;
@@ -48,6 +48,7 @@ void udp_bind(const char *, const char *);
 void udp_connect(const char *, const char *);
 void udp_getsockname(char **, char **);
 void udp_setbuffersize(int, int);
+void udp_setrouteralert(void);
 void udp_send(const char *, size_t, unsigned long);
 void udp_receive(char *, size_t);
 void udp_close(void);
@@ -68,12 +69,13 @@ void ssh_wait(void);
 static void
 usage(void)
 {
-	fprintf(stderr, "usage: udpbench [-D] [-B bitrate] [-b bufsize] "
+	fprintf(stderr, "usage: udpbench [-DH] [-B bitrate] [-b bufsize] "
 	    "[-l length] [-P packetrate] [-p port] [-R remoteprog] "
 	    "[-r remotessh] [-t timeout] send|recv [hostname]\n"
 	    "    -B bitrate	bits per seconds send rate\n"
 	    "    -b bufsize     set size of send or receive buffer\n"
 	    "    -D             use pf divert packet for receive\n"
+	    "    -H             send hop-by-hop router alert option\n"
 	    "    -l length      set length of udp payload\n"
 	    "    -P packetrate  packets per second send rate\n"
 	    "    -p port        udp port, default 12345, random 0\n"
@@ -100,14 +102,10 @@ main(int argc, char *argv[])
 	char *hostname = NULL, *service = "12345", *remotessh = NULL;
 	char *localaddr, *localport;
 
-#ifdef __OpenBSD__
-	if (pledge("stdio dns inet proc exec", NULL) == -1)
-		err(1, "pledge");
-#endif
 	if (setvbuf(stdout, NULL, _IOLBF, 0) != 0)
 		err(1, "setvbuf");
 
-	while ((ch = getopt(argc, argv, "B:b:Dl:P:p:R:r:t:")) != -1) {
+	while ((ch = getopt(argc, argv, "B:b:DHl:P:p:R:r:t:")) != -1) {
 		switch (ch) {
 		case 'B':
 			bitrate = strtonum(optarg, 0, LLONG_MAX, &errstr);
@@ -123,6 +121,9 @@ main(int argc, char *argv[])
 			break;
 		case 'D':
 			divert = 1;
+			break;
+		case 'H':
+			hopbyhop = 1;
 			break;
 		case 'l':
 			udplength = strtonum(optarg, 0, IP_MAXPACKET, &errstr);
@@ -182,9 +183,14 @@ main(int argc, char *argv[])
 		errx(1, "bitrate or packetrate only allowed for send");
 	if (sendmode && remotessh == NULL && divert)
 		errx(1, "divert only allowed for receive");
+	if (!sendmode && remotessh == NULL && hopbyhop)
+		errx(1, "hopbyhop only allowed for send");
 
 #ifdef __OpenBSD__
-	if (remotessh == NULL) {
+	if (remotessh != NULL)
+		if (pledge("stdio dns inet proc exec", NULL) == -1)
+			err(1, "pledge");
+	if (!hopbyhop && remotessh == NULL) {
 		if (pledge("stdio dns inet", NULL) == -1)
 			err(1, "pledge");
 	}
@@ -217,7 +223,17 @@ main(int argc, char *argv[])
 		}
 		udp_connect(hostname, service);
 		udp_getsockname(NULL, NULL);
-		udp_setbuffersize(SO_SNDBUF, buffersize);
+		if (buffersize)
+			udp_setbuffersize(SO_SNDBUF, buffersize);
+		if (hopbyhop) {
+			if (udp_family != AF_INET6)
+				errx(1, "hopbyhop only allowed with IPv6");
+			udp_setrouteralert();
+#ifdef __OpenBSD__
+			if (pledge("stdio dns inet", NULL) == -1)
+				err(1, "pledge");
+#endif
+		}
 		if (bitrate) {
 			unsigned long framelength;
 
@@ -242,7 +258,8 @@ main(int argc, char *argv[])
 			localport = service;
 		} else
 			udp_getsockname(&localaddr, &localport);
-		udp_setbuffersize(SO_RCVBUF, buffersize);
+		if (buffersize)
+			udp_setbuffersize(SO_RCVBUF, buffersize);
 		if (remotessh != NULL) {
 			ssh_connect(remotessh, progname, localaddr, localport,
 			buffersize, udplength, timeout);
@@ -423,14 +440,33 @@ udp_setbuffersize(int name, int size)
 {
 	socklen_t len;
 
-	/* use default */
-	if (size == 0)
-		return;
-
 	len = sizeof(size);
 	if (setsockopt(udp_socket, SOL_SOCKET, name, &size, len) == -1)
 		err(1, "setsockopt buffer size %d", size);
 
+}
+
+void
+udp_setrouteralert(void)
+{
+	struct {
+		struct ip6_hbh		hbh;
+		struct ip6_opt_router	ra;
+		u_char			pad[2];
+	} opts;
+	socklen_t len;
+
+	opts.hbh.ip6h_nxt = IPPROTO_UDP;
+	opts.hbh.ip6h_len = (sizeof(opts) - 1) / 8;
+	opts.ra.ip6or_type = IP6OPT_ROUTER_ALERT;
+	opts.ra.ip6or_len = sizeof(opts.ra) - 2;
+	*(uint16_t *)opts.ra.ip6or_value = IP6_ALERT_AN;
+	opts.pad[0] = IP6OPT_PAD1;
+	opts.pad[1] = IP6OPT_PAD1;
+	len = sizeof(opts);
+	if (setsockopt(udp_socket, IPPROTO_IPV6, IPV6_HOPOPTS, &opts, len)
+	    == -1)
+		err(1, "setsockopt router alert");
 }
 
 void
@@ -727,7 +763,7 @@ ssh_connect(const char *remotessh, const char *progname,
     const char *hostname, const char *service,
     int buffersize, size_t udplength, int timeout)
 {
-	char *argv[15];
+	char *argv[16];
 	size_t i = 0;
 
 	argv[i++] = "ssh";
@@ -745,11 +781,13 @@ ssh_connect(const char *remotessh, const char *progname,
 	argv[i++] = "-t";
 	if (asprintf(&argv[i++], "%d", timeout) == -1)
 		err(1, "asprintf timeout");
+	if (hopbyhop)
+		argv[i++] = "-H";
 	argv[i++] = "send";
 	argv[i++] = (char *)hostname;
 	argv[i++] = NULL;
 
-	assert(i == sizeof(argv) / sizeof(argv[0]));
+	assert(i <= sizeof(argv) / sizeof(argv[0]));
 
 	ssh_pipe(argv);
 
