@@ -23,7 +23,7 @@
 .Sh SYNOPSIS
 .Nm
 .Bk -words
-.Op Fl D
+.Op Fl DH
 .Op Fl B Ar bitrate
 .Op Fl b Ar bufsize
 .Op Fl l Ar length
@@ -80,6 +80,8 @@ mode this option has no effect on local sending.
 With dynamic
 .Ic ssh
 the option is passed to the remote process.
+.It Fl H
+Use IPv6 hop-by-hop option by adding a router alert when sending.
 .It Fl l Ar length
 Set length of the UDP payload for sending, or length of the userland
 buffer for receiving the packet.
