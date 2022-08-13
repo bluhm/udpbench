@@ -448,7 +448,7 @@ udp_send(const char *payload, size_t udplen, unsigned long packetrate)
 	while (!alarm_signaled) {
 		syscall++;
 		if (send(udp_socket, payload, udplen, 0) == -1) {
-			if (errno == ENOBUFS)
+			if (errno == ENOBUFS || errno == EINTR)
 				continue;
 			err(1, "send");
 		}
