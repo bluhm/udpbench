@@ -68,7 +68,7 @@ void ssh_wait(void);
 static void
 usage(void)
 {
-	fprintf(stderr, "usage: udpbench [-B bitrate] [-b bufsize] "
+	fprintf(stderr, "usage: udpbench [-D] [-B bitrate] [-b bufsize] "
 	    "[-l length] [-P packetrate] [-p port] [-R remoteprog] "
 	    "[-r remotessh] [-t timeout] send|recv [hostname]\n"
 	    "    -B bitrate	bits per seconds send rate\n"
@@ -180,6 +180,8 @@ main(int argc, char *argv[])
 		errx(1, "either bitrate or packetrate may be given");
 	if (!sendmode && remotessh == NULL && (bitrate || packetrate))
 		errx(1, "bitrate or packetrate only allowed for send");
+	if (sendmode && remotessh == NULL && divert)
+		errx(1, "divert only allowed for receive");
 
 #ifdef __OpenBSD__
 	if (remotessh == NULL) {
