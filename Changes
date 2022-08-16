@@ -1,6 +1,10 @@
 Revision history for udpbench udp network benchmarking tool.
 
-1.04
+1.04 2022-08-16
+    - Send hop-by-hop router alert IPv6 extension header with -H.
+    - Divert mode is only allowed for receiving.
+      Warning: Option -D for non remote send generates error.
+    - Sending packets does abort with EINTR anymore.
 
 1.03 2022-08-10
     - Portable GNU makefile for Debian and Ubuntu.
