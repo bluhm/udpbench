@@ -19,8 +19,8 @@ install:
 	install -c -m 555 -s udpbench -D -t ${DESTDIR}${BINDIR}
 	install -c -m 444 udpbench.1 -D -t ${DESTDIR}${MANDIR}1
 
-.PHONY: test test-localhost test-localhost6
-test: test-localhost test-localhost6
+.PHONY: test test-localhost test-localhost6 test-localhost-mmsg
+test: test-localhost test-localhost6 test-localhost-mmsg
 
 test-localhost:
 	@echo -e '\n==== $@ ===='
@@ -37,5 +37,14 @@ test-localhost6:
 	    sleep 1; \
 	    port=`awk '/^sockname:/{print $$3}' out`; \
 	    ./udpbench -p $$port -t1 send ::1 || exit 1; \
+	    wait $$!
+	grep '^recv:' out
+
+test-localhost-mmsg:
+	@echo -e '\n==== $@ ===='
+	./udpbench -p 0 -t3 -m1024 recv 127.0.0.1 >out & \
+	    sleep 1; \
+	    port=`awk '/^sockname:/{print $$3}' out`; \
+	    ./udpbench -p $$port -t1 -m1024 send 127.0.0.1 || exit 1; \
 	    wait $$!
 	grep '^recv:' out
