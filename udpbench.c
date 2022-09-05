@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2019-2022 Alexander Bluhm <bluhm@genua.de>
+ * Copyright (c) 2022 Moritz Buhl <mbuhl@genua.de>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -40,6 +41,7 @@ sig_atomic_t alarm_signaled;
 int divert, hopbyhop;
 int udp_family;
 int udp_socket = -1;
+unsigned int mmsghdrs;
 FILE *ssh_stream;
 pid_t ssh_pid;
 
@@ -52,6 +54,9 @@ void udp_setrouteralert(void);
 void udp_send(const char *, size_t, unsigned long);
 void udp_receive(char *, size_t);
 void udp_close(void);
+
+struct mmsghdr	*udp_recvmmsg_setup(size_t, size_t);
+struct mmsghdr	*udp_sendmmsg_setup(size_t, size_t);
 
 void print_status(const char *, unsigned long, unsigned long, unsigned long,
     int, const struct timeval *);
@@ -77,6 +82,7 @@ usage(void)
 	    "    -D             use pf divert packet for receive\n"
 	    "    -H             send hop-by-hop router alert option\n"
 	    "    -l length      set length of udp payload\n"
+	    "    -m mmsghdrs    set mmsghdr size for send and recvmmsg\n"
 	    "    -P packetrate  packets per second send rate\n"
 	    "    -p port        udp port, default 12345, random 0\n"
 	    "    -R remoteprog  path of udpbench tool on remote side\n"
@@ -105,7 +111,7 @@ main(int argc, char *argv[])
 	if (setvbuf(stdout, NULL, _IOLBF, 0) != 0)
 		err(1, "setvbuf");
 
-	while ((ch = getopt(argc, argv, "B:b:DHl:P:p:R:r:t:")) != -1) {
+	while ((ch = getopt(argc, argv, "B:b:DHl:m:P:p:R:r:t:")) != -1) {
 		switch (ch) {
 		case 'B':
 			bitrate = strtonum(optarg, 0, LLONG_MAX, &errstr);
@@ -129,6 +135,12 @@ main(int argc, char *argv[])
 			udplength = strtonum(optarg, 0, IP_MAXPACKET, &errstr);
 			if (errstr != NULL)
 				errx(1, "payload length is %s: %s",
+				    errstr, optarg);
+			break;
+		case 'm':
+			mmsghdrs = strtonum(optarg, 1, 1024, &errstr);
+			if (errstr != NULL)
+				errx(1, "msghdr size is %s: %s",
 				    errstr, optarg);
 			break;
 		case 'P':
@@ -469,6 +481,34 @@ udp_setrouteralert(void)
 		err(1, "setsockopt router alert");
 }
 
+struct mmsghdr *
+udp_sendmmsg_setup(size_t msgs, size_t msgsiz)
+{
+	struct mmsghdr *mmsg;
+	struct iovec *iov;
+	char *base;
+	size_t i;
+
+	if ((mmsg = calloc(msgs, sizeof(struct mmsghdr))) == NULL)
+		err(1, "calloc");
+
+	if ((iov = calloc(msgs, sizeof(struct iovec))) == NULL)
+		err(1, "calloc");
+
+	for (i = 0; i < msgs; i++) {
+		mmsg[i].msg_hdr.msg_iov = &iov[i];
+		mmsg[i].msg_hdr.msg_iovlen = 1;
+
+		if ((base = malloc(msgsiz)) == NULL)
+			err(1, "malloc");
+		arc4random_buf(base, msgsiz);
+		iov[i].iov_base = base;
+		iov[i].iov_len = msgsiz;
+	}
+
+	return mmsg;
+}
+
 void
 udp_send(const char *payload, size_t udplen, unsigned long packetrate)
 {
@@ -476,6 +516,9 @@ udp_send(const char *payload, size_t udplen, unsigned long packetrate)
 	struct timespec wait;
 	unsigned long syscall, packet;
 	double expectduration, waittime;
+	struct mmsghdr *mmsg;
+	ssize_t sndlen;
+	int pkts = 1;
 
 	if (gettimeofday(&begin, NULL) == -1)
 		err(1, "gettimeofday begin");
@@ -483,14 +526,21 @@ udp_send(const char *payload, size_t udplen, unsigned long packetrate)
 
 	syscall = 0;
 	packet = 0;
+	sndlen = 0;
+	if (mmsghdrs)
+		mmsg = udp_sendmmsg_setup(mmsghdrs, udplen);
 	while (!alarm_signaled) {
 		syscall++;
-		if (send(udp_socket, payload, udplen, 0) == -1) {
+		if (mmsghdrs)
+			pkts = sendmmsg(udp_socket, mmsg, mmsghdrs, 0);
+		else
+			sndlen = send(udp_socket, payload, udplen, 0);
+		if (pkts == -1 || sndlen == -1) {
 			if (errno == ENOBUFS || errno == EINTR)
 				continue;
 			err(1, "send");
 		}
-		packet++;
+		packet += pkts;
 		if (packetrate) {
 			if (!timerisset(&end)) {
 				if (gettimeofday(&end, NULL) == -1)
@@ -520,14 +570,43 @@ udp_send(const char *payload, size_t udplen, unsigned long packetrate)
 	print_status("send", syscall, packet, udplen, udp_family, &duration);
 }
 
+struct mmsghdr *
+udp_recvmmsg_setup(size_t msgs, size_t msgsiz)
+{
+	struct mmsghdr *mmsg;
+	struct iovec *iov;
+	char *base;
+	size_t i;
+
+	if ((mmsg = calloc(msgs, sizeof(struct mmsghdr))) == NULL)
+		err(1, "calloc");
+
+	if ((iov = calloc(msgs, sizeof(struct iovec))) == NULL)
+		err(1, "calloc");
+
+	for (i = 0; i < msgs; i++) {
+		mmsg[i].msg_hdr.msg_iov = &iov[i];
+		mmsg[i].msg_hdr.msg_iovlen = 1;
+
+		if ((base = malloc(msgsiz)) == NULL)
+			err(1, "malloc");
+		iov[i].iov_base = base;
+		iov[i].iov_len = msgsiz;
+	}
+
+	return mmsg;
+}
+
 void
 udp_receive(char *payload, size_t udplen)
 {
 	struct timeval begin, idle, end, duration, timeo;
 	unsigned long syscall, packet, bored;
 	unsigned long headerlen, paylen;
+	struct mmsghdr *mmsg;
 	ssize_t rcvlen;
 	socklen_t len;
+	int pkts = 1;
 
 	if (divert) {
 		headerlen = sizeof(struct udphdr) + ((udp_family == AF_INET) ?
@@ -561,9 +640,16 @@ udp_receive(char *payload, size_t udplen)
 	syscall = 1;
 	packet = 1;
 	bored = 0;
+	if (mmsghdrs)
+		mmsg = udp_recvmmsg_setup(mmsghdrs, udplen + 1);
 	while (!alarm_signaled) {
 		syscall++;
-		if (recv(udp_socket, payload, udplen + 1, 0) == -1) {
+
+		if (mmsghdrs)
+			pkts = recvmmsg(udp_socket, mmsg, mmsghdrs, 0, NULL);
+		else
+			rcvlen = recv(udp_socket, payload, udplen + 1, 0);
+		if (pkts == -1 || rcvlen == -1) {
 			if (errno == EWOULDBLOCK) {
 				bored++;
 				if (bored == 1) {
@@ -583,7 +669,7 @@ udp_receive(char *payload, size_t udplen)
 			err(1, "recv");
 		}
 		bored = 0;
-		packet++;
+		packet += pkts;
 	}
 
 	if (gettimeofday(&end, NULL) == -1)
@@ -725,7 +811,7 @@ ssh_bind(const char *remotessh, const char *progname,
     const char *hostname, const char *service,
     int buffersize, size_t udplength, int timeout)
 {
-	char *argv[16];
+	char *argv[18];
 	size_t i = 0;
 
 	argv[i++] = "ssh";
@@ -745,6 +831,11 @@ ssh_bind(const char *remotessh, const char *progname,
 		err(1, "asprintf timeout");
 	if (divert)
 		argv[i++] = "-D";
+	if (mmsghdrs) {
+		argv[i++] = "-m";
+		if (asprintf(&argv[i++], "%d", mmsghdrs) == -1)
+			err(1, "asprintf mmsghdrs");
+	}
 	argv[i++] = "recv";
 	argv[i++] = (char *)hostname;
 	argv[i++] = NULL;
@@ -763,7 +854,7 @@ ssh_connect(const char *remotessh, const char *progname,
     const char *hostname, const char *service,
     int buffersize, size_t udplength, int timeout)
 {
-	char *argv[16];
+	char *argv[18];
 	size_t i = 0;
 
 	argv[i++] = "ssh";
@@ -783,6 +874,11 @@ ssh_connect(const char *remotessh, const char *progname,
 		err(1, "asprintf timeout");
 	if (hopbyhop)
 		argv[i++] = "-H";
+	if (mmsghdrs) {
+		argv[i++] = "-m";
+		if (asprintf(&argv[i++], "%d", mmsghdrs) == -1)
+			err(1, "asprintf mmsghdrs");
+	}
 	argv[i++] = "send";
 	argv[i++] = (char *)hostname;
 	argv[i++] = NULL;
