@@ -27,6 +27,7 @@
 .Op Fl B Ar bitrate
 .Op Fl b Ar bufsize
 .Op Fl l Ar length
+.Op Fl m Ar mmsghdrs
 .Op Fl P Ar packetrate
 .Op Fl p Ar port
 .Op Fl R Ar remoteprog
@@ -86,6 +87,12 @@ Use IPv6 hop-by-hop option by adding a router alert when sending.
 Set length of the UDP payload for sending, or length of the userland
 buffer for receiving the packet.
 By default the payload is empty.
+.It Fl m Ar mmsghdrs
+Use
+.Xr recvmmsg 2
+and
+.Xr sendmmsg 2
+and set the amount of simultaneously handled messages.
 .It Fl P Ar packetrate
 The value specifies the number of packets to send within a second.
 This adds a small delay between
