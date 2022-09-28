@@ -164,6 +164,11 @@ This needs configuration in
 .D1 Nm Fl D Fl p Ar 1234 Fl r Ar root@remotehost Cm recv Ar localip
 .Sh DIAGNOSTICS
 .Bl -diag
+.It "udpbench recv: recv 1: Interrupted system call"
+While the receiver was waiting for the first packet, the timeout
+triggered.
+Check connectivity, start sender quickly after receiver, increase
+.Fl t Ar timeout .
 .It "udpbench recv: not enough idle time"
 For the receiving side the stream of packets finishes after 1 second
 idle time.
