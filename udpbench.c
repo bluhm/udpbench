@@ -668,6 +668,7 @@ udp_receive(char *payload, size_t udplen)
 				continue;
 			err(1, "recv");
 		}
+		timerclear(&idle);
 		bored = 0;
 		packet += pkts;
 	}
