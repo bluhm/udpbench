@@ -162,6 +162,15 @@ This needs configuration in
 .Xr pf.conf 5 .
 .D1 Ic pass Ic proto Ic udp Ic to Ar localip Ic port Ar 1234 Ic divert-packet Ic port Ar 1234
 .D1 Nm Fl D Fl p Ar 1234 Fl r Ar root@remotehost Cm recv Ar localip
+.Sh DIAGNOSTICS
+.Bl -diag
+.It "udpbench recv: not enough idle time"
+For the receiving side the stream of packets finishes after 1 second
+idle time.
+If the receive timeout happens earlier, the measurement is incomplete.
+Increase
+.Fl t Ar timeout .
+.El
 .Sh SEE ALSO
 .Xr iperf3 1 ,
 .Xr tcpbench 1
