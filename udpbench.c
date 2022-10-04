@@ -518,7 +518,7 @@ udp_send(const char *payload, size_t udplen, unsigned long packetrate)
 	double expectduration, waittime;
 	struct mmsghdr *mmsg;
 	ssize_t sndlen;
-	int pkts = 1;
+	int pkts;
 
 	if (gettimeofday(&begin, NULL) == -1)
 		err(1, "gettimeofday begin");
@@ -529,6 +529,8 @@ udp_send(const char *payload, size_t udplen, unsigned long packetrate)
 	sndlen = 0;
 	if (mmsghdrs)
 		mmsg = udp_sendmmsg_setup(mmsghdrs, udplen);
+	else
+		pkts = 1;
 	while (!alarm_signaled) {
 		syscall++;
 		if (mmsghdrs)
@@ -606,7 +608,7 @@ udp_receive(char *payload, size_t udplen)
 	struct mmsghdr *mmsg;
 	ssize_t rcvlen;
 	socklen_t len;
-	int pkts = 1;
+	int pkts;
 
 	if (divert) {
 		headerlen = sizeof(struct udphdr) + ((udp_family == AF_INET) ?
@@ -642,9 +644,10 @@ udp_receive(char *payload, size_t udplen)
 	bored = 0;
 	if (mmsghdrs)
 		mmsg = udp_recvmmsg_setup(mmsghdrs, udplen + 1);
+	else
+		pkts = 1;
 	while (!alarm_signaled) {
 		syscall++;
-
 		if (mmsghdrs)
 			pkts = recvmmsg(udp_socket, mmsg, mmsghdrs, 0, NULL);
 		else
