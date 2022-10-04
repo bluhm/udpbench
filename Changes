@@ -1,6 +1,11 @@
 Revision history for udpbench udp network benchmarking tool.
 
-1.05
+1.05 2022-10-04
+    - With option -m udpbench uses system calls sendmmsg(2) and
+      recvmmsg(2) instead of send(2) and recv(2).
+    - Add tests and documentation for mmsg feature.
+    - Improve recv idle time logic and document it in diagnostics.
+    - Document recv interrupted system call in diagnostics.
 
 1.04 2022-08-16
     - Send hop-by-hop router alert IPv6 extension header with -H.
