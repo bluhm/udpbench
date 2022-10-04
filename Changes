@@ -1,5 +1,7 @@
 Revision history for udpbench udp network benchmarking tool.
 
+1.06
+
 1.05 2022-10-04
     - With option -m udpbench uses system calls sendmmsg(2) and
       recvmmsg(2) instead of send(2) and recv(2).
