@@ -831,7 +831,7 @@ ssh_bind(const char *remotessh, const char *progname,
 	argv[i++] = "-p";
 	argv[i++] = (char *)service;
 	argv[i++] = "-t";
-	if (asprintf(&argv[i++], "%d", timeout + 2) == -1)
+	if (asprintf(&argv[i++], "%d", timeout > 0 ? timeout + 2 : 0) == -1)
 		err(1, "asprintf timeout");
 	if (divert)
 		argv[i++] = "-D";
