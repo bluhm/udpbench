@@ -59,7 +59,7 @@ struct mmsghdr	*udp_recvmmsg_setup(size_t, size_t);
 struct mmsghdr	*udp_sendmmsg_setup(size_t, size_t);
 
 void print_status(const char *, unsigned long, unsigned long, unsigned long,
-    int, const struct timeval *);
+    int, const struct timeval *, const struct timeval *);
 unsigned long udp2iplength(unsigned long, int, unsigned long *);
 unsigned long udp2etherlength(unsigned long , int, int);
 
@@ -567,9 +567,7 @@ udp_send(const char *payload, size_t udplen, unsigned long packetrate)
 
 	if (gettimeofday(&end, NULL) == -1)
 		err(1, "gettimeofday end");
-
-	timersub(&end, &begin, &duration);
-	print_status("send", syscall, packet, udplen, udp_family, &duration);
+	print_status("send", syscall, packet, udplen, udp_family, &begin, &end);
 }
 
 struct mmsghdr *
@@ -602,7 +600,7 @@ udp_recvmmsg_setup(size_t msgs, size_t msgsiz)
 void
 udp_receive(char *payload, size_t udplen)
 {
-	struct timeval begin, idle, end, duration, timeo;
+	struct timeval begin, idle, end, timeo;
 	unsigned long syscall, packet, bored;
 	unsigned long headerlen, paylen;
 	struct mmsghdr *mmsg;
@@ -678,14 +676,16 @@ udp_receive(char *payload, size_t udplen)
 
 	if (gettimeofday(&end, NULL) == -1)
 		err(1, "gettimeofday end");
-
 	if (timerisset(&idle)) {
-		timersub(&idle, &begin, &duration);
-		timersub(&end, &idle, &idle);
-	} else {
-		timersub(&end, &begin, &duration);
+		struct timeval tmp;
+
+		tmp = end;
+		/* last packet was seen at idle time */
+		end = idle;
+		/* new idle is duration without packets */
+		timersub(&tmp, &idle, &idle);
 	}
-	print_status("recv", syscall, packet, paylen, udp_family, &duration);
+	print_status("recv", syscall, packet, paylen, udp_family, &begin, &end);
 	if (idle.tv_sec < 1)
 		errx(1, "not enough idle time: %lld.%06ld",
 		    (long long)idle.tv_sec, idle.tv_usec);
@@ -700,19 +700,25 @@ udp_close(void)
 
 void
 print_status(const char *action, unsigned long syscall, unsigned long packet,
-    unsigned long paylen, int af, const struct timeval *duration)
+    unsigned long paylen, int af, const struct timeval *begin,
+    const struct timeval *end)
 {
+	struct timeval duration;
 	unsigned long frame, iplen, framelen;
 	double bits;
 
 	iplen = udp2iplength(paylen, af, &frame);
 	framelen = udp2etherlength(paylen, af, 0);
 	bits = (double)packet * framelen * 8;
-	bits /= (double)duration->tv_sec + (double)duration->tv_usec / 1000000;
+	timersub(end, begin, &duration);
+	bits /= (double)duration.tv_sec + (double)duration.tv_usec / 1000000;
 	printf("%s: syscalls %lu, packets %lu, frames %lu, payload %lu, "
-	    "ip %lu, ether %lu, duration %lld.%06ld, bit/s %g\n",
+	    "ip %lu, ether %lu, begin %lld.%06ld, end %lld.%06ld, "
+	    "duration %lld.%06ld, bit/s %g\n",
 	    action, syscall, packet, packet * frame, paylen, iplen, framelen,
-	    (long long)duration->tv_sec, duration->tv_usec, bits);
+	    (long long)begin->tv_sec, begin->tv_usec,
+	    (long long)end->tv_sec, end->tv_usec,
+	    (long long)duration.tv_sec, duration.tv_usec, bits);
 }
 
 unsigned long
