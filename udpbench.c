@@ -77,7 +77,7 @@ usage(void)
 	fprintf(stderr, "usage: udpbench [-DH] [-B bitrate] [-b bufsize] "
 	    "[-l length] [-P packetrate] [-p port] [-R remoteprog] "
 	    "[-r remotessh] [-t timeout] send|recv [hostname]\n"
-	    "    -B bitrate	bits per seconds send rate\n"
+	    "    -B bitrate     bits per seconds send rate\n"
 	    "    -b bufsize     set size of send or receive buffer\n"
 	    "    -D             use pf divert packet for receive\n"
 	    "    -H             send hop-by-hop router alert option\n"
