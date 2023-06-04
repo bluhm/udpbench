@@ -41,7 +41,7 @@ sig_atomic_t alarm_signaled;
 int divert, hopbyhop;
 int udp_family;
 int udp_socket = -1;
-unsigned int mmsghdrs;
+int mmsglen;
 FILE *ssh_stream;
 pid_t ssh_pid;
 const int timeout_idle = 1;
@@ -56,8 +56,8 @@ void udp_send(const char *, size_t, unsigned long);
 void udp_receive(char *, size_t);
 void udp_close(void);
 
-struct mmsghdr	*udp_recvmmsg_setup(size_t, size_t);
-struct mmsghdr	*udp_sendmmsg_setup(size_t, size_t);
+struct mmsghdr	*mmsg_alloc(int, size_t, int);
+void		 mmsg_free(struct mmsghdr *);
 
 void print_status(const char *, unsigned long, unsigned long, unsigned long,
     int, const struct timeval *, const struct timeval *);
@@ -76,14 +76,14 @@ static void
 usage(void)
 {
 	fprintf(stderr, "usage: udpbench [-DH] [-B bitrate] [-b bufsize] "
-	    "[-l length] [-P packetrate] [-p port] [-R remoteprog] "
-	    "[-r remotessh] [-t timeout] send|recv [hostname]\n"
+	    "[-l length] [-m mmsglen] [-P packetrate] [-p port] "
+	    "[-R remoteprog] [-r remotessh] [-t timeout] send|recv [hostname]\n"
 	    "    -B bitrate     bits per seconds send rate\n"
 	    "    -b bufsize     set size of send or receive buffer\n"
 	    "    -D             use pf divert packet for receive\n"
 	    "    -H             send hop-by-hop router alert option\n"
 	    "    -l length      set length of udp payload\n"
-	    "    -m mmsghdrs    set mmsghdr size for send and recvmmsg\n"
+	    "    -m mmsglen     number of mmsghdr for sendmmsg or recvmmsg\n"
 	    "    -P packetrate  packets per second send rate\n"
 	    "    -p port        udp port, default 12345, random 0\n"
 	    "    -R remoteprog  path of udpbench tool on remote side\n"
@@ -139,7 +139,7 @@ main(int argc, char *argv[])
 				    errstr, optarg);
 			break;
 		case 'm':
-			mmsghdrs = strtonum(optarg, 1, 1024, &errstr);
+			mmsglen = strtonum(optarg, 1, 1024, &errstr);
 			if (errstr != NULL)
 				errx(1, "msghdr size is %s: %s",
 				    errstr, optarg);
@@ -483,31 +483,45 @@ udp_setrouteralert(void)
 }
 
 struct mmsghdr *
-udp_sendmmsg_setup(size_t msgs, size_t msgsiz)
+mmsg_alloc(int packets, size_t paylen, int fill)
 {
-	struct mmsghdr *mmsg;
+	struct mmsghdr *mmsg, *mhdr;
 	struct iovec *iov;
-	char *base;
-	size_t i;
+	char *payload;
 
-	if ((mmsg = calloc(msgs, sizeof(struct mmsghdr))) == NULL)
-		err(1, "calloc");
+	if ((mmsg = calloc(packets, sizeof(struct mmsghdr))) == NULL)
+		err(1, "calloc mmsghdr");
 
-	if ((iov = calloc(msgs, sizeof(struct iovec))) == NULL)
-		err(1, "calloc");
+	if ((iov = calloc(packets, sizeof(struct iovec))) == NULL)
+		err(1, "calloc iovec");
 
-	for (i = 0; i < msgs; i++) {
-		mmsg[i].msg_hdr.msg_iov = &iov[i];
-		mmsg[i].msg_hdr.msg_iovlen = 1;
+	if ((payload = calloc(packets, paylen)) == NULL)
+		err(1, "calloc payload");
+	if (fill)
+		arc4random_buf(payload, packets * paylen);
 
-		if ((base = malloc(msgsiz)) == NULL)
-			err(1, "malloc");
-		arc4random_buf(base, msgsiz);
-		iov[i].iov_base = base;
-		iov[i].iov_len = msgsiz;
+	mhdr = mmsg;
+	while (packets > 0) {
+		mhdr->msg_hdr.msg_iov = iov;
+		mhdr->msg_hdr.msg_iovlen = 1;
+		iov->iov_base = payload;
+		iov->iov_len = paylen;
+
+		mhdr++;
+		iov++;
+		payload += paylen;
+		packets--;
 	}
 
 	return mmsg;
+}
+
+void
+mmsg_free(struct mmsghdr *mmsg)
+{
+	free(mmsg->msg_hdr.msg_iov->iov_base);
+	free(mmsg->msg_hdr.msg_iov);
+	free(mmsg);
 }
 
 void
@@ -528,14 +542,14 @@ udp_send(const char *payload, size_t udplen, unsigned long packetrate)
 	syscall = 0;
 	packet = 0;
 	sndlen = 0;
-	if (mmsghdrs)
-		mmsg = udp_sendmmsg_setup(mmsghdrs, udplen);
+	if (mmsglen)
+		mmsg = mmsg_alloc(mmsglen, udplen, 1);
 	else
 		pkts = 1;
 	while (!alarm_signaled) {
 		syscall++;
-		if (mmsghdrs)
-			pkts = sendmmsg(udp_socket, mmsg, mmsghdrs, 0);
+		if (mmsglen)
+			pkts = sendmmsg(udp_socket, mmsg, mmsglen, 0);
 		else
 			sndlen = send(udp_socket, payload, udplen, 0);
 		if (pkts == -1 || sndlen == -1) {
@@ -569,33 +583,8 @@ udp_send(const char *payload, size_t udplen, unsigned long packetrate)
 	if (gettimeofday(&end, NULL) == -1)
 		err(1, "gettimeofday end");
 	print_status("send", syscall, packet, udplen, udp_family, &begin, &end);
-}
-
-struct mmsghdr *
-udp_recvmmsg_setup(size_t msgs, size_t msgsiz)
-{
-	struct mmsghdr *mmsg;
-	struct iovec *iov;
-	char *base;
-	size_t i;
-
-	if ((mmsg = calloc(msgs, sizeof(struct mmsghdr))) == NULL)
-		err(1, "calloc");
-
-	if ((iov = calloc(msgs, sizeof(struct iovec))) == NULL)
-		err(1, "calloc");
-
-	for (i = 0; i < msgs; i++) {
-		mmsg[i].msg_hdr.msg_iov = &iov[i];
-		mmsg[i].msg_hdr.msg_iovlen = 1;
-
-		if ((base = malloc(msgsiz)) == NULL)
-			err(1, "malloc");
-		iov[i].iov_base = base;
-		iov[i].iov_len = msgsiz;
-	}
-
-	return mmsg;
+	if (mmsglen)
+		mmsg_free(mmsg);
 }
 
 void
@@ -640,14 +629,14 @@ udp_receive(char *payload, size_t udplen)
 
 	syscall = 1;
 	packet = 1;
-	if (mmsghdrs)
-		mmsg = udp_recvmmsg_setup(mmsghdrs, udplen + 1);
+	if (mmsglen)
+		mmsg = mmsg_alloc(mmsglen, udplen + 1, 0);
 	else
 		pkts = 1;
 	while (!alarm_signaled) {
 		syscall++;
-		if (mmsghdrs)
-			pkts = recvmmsg(udp_socket, mmsg, mmsghdrs, 0, NULL);
+		if (mmsglen)
+			pkts = recvmmsg(udp_socket, mmsg, mmsglen, 0, NULL);
 		else
 			rcvlen = recv(udp_socket, payload, udplen + 1, 0);
 		if (pkts == -1 || rcvlen == -1) {
@@ -832,10 +821,10 @@ ssh_bind(const char *remotessh, const char *progname,
 		err(1, "asprintf timeout");
 	if (divert)
 		argv[i++] = "-D";
-	if (mmsghdrs) {
+	if (mmsglen) {
 		argv[i++] = "-m";
-		if (asprintf(&argv[i++], "%d", mmsghdrs) == -1)
-			err(1, "asprintf mmsghdrs");
+		if (asprintf(&argv[i++], "%d", mmsglen) == -1)
+			err(1, "asprintf mmsglen");
 	}
 	argv[i++] = "recv";
 	argv[i++] = (char *)hostname;
@@ -875,10 +864,10 @@ ssh_connect(const char *remotessh, const char *progname,
 		err(1, "asprintf timeout");
 	if (hopbyhop)
 		argv[i++] = "-H";
-	if (mmsghdrs) {
+	if (mmsglen) {
 		argv[i++] = "-m";
-		if (asprintf(&argv[i++], "%d", mmsghdrs) == -1)
-			err(1, "asprintf mmsghdrs");
+		if (asprintf(&argv[i++], "%d", mmsglen) == -1)
+			err(1, "asprintf mmsglen");
 	}
 	argv[i++] = "send";
 	argv[i++] = (char *)hostname;
