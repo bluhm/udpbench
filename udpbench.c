@@ -44,6 +44,7 @@ int udp_socket = -1;
 unsigned int mmsghdrs;
 FILE *ssh_stream;
 pid_t ssh_pid;
+const int timeout_idle = 1;
 
 void alarm_handler(int);
 void udp_bind(const char *, const char *);
@@ -601,7 +602,7 @@ void
 udp_receive(char *payload, size_t udplen)
 {
 	struct timeval begin, idle, end, timeo;
-	unsigned long syscall, packet, bored;
+	unsigned long syscall, packet;
 	unsigned long headerlen, paylen;
 	struct mmsghdr *mmsg;
 	ssize_t rcvlen;
@@ -631,15 +632,14 @@ udp_receive(char *payload, size_t udplen)
 		err(1, "gettimeofday begin");
 	timerclear(&idle);
 
-	timeo.tv_sec = 0;
-	timeo.tv_usec = 100000;
+	timeo.tv_sec = timeout_idle;
+	timeo.tv_usec = 0;
 	len = sizeof(timeo);
 	if (setsockopt(udp_socket, SOL_SOCKET, SO_RCVTIMEO, &timeo, len) == -1)
 		err(1, "setsockopt recv timeout");
 
 	syscall = 1;
 	packet = 1;
-	bored = 0;
 	if (mmsghdrs)
 		mmsg = udp_recvmmsg_setup(mmsghdrs, udplen + 1);
 	else
@@ -652,25 +652,16 @@ udp_receive(char *payload, size_t udplen)
 			rcvlen = recv(udp_socket, payload, udplen + 1, 0);
 		if (pkts == -1 || rcvlen == -1) {
 			if (errno == EWOULDBLOCK) {
-				bored++;
-				if (bored == 1) {
-					if (gettimeofday(&idle, NULL) == -1)
-						err(1, "gettimeofday idle");
-					/* packet was seen before timeout */
-					timersub(&idle, &timeo, &idle);
-				}
-				if (bored * timeo.tv_usec > 1000000) {
-					/* more than a second idle time */
-					break;
-				}
-				continue;
+				if (gettimeofday(&idle, NULL) == -1)
+					err(1, "gettimeofday idle");
+				/* packet was seen before timeout */
+				timersub(&idle, &timeo, &idle);
+				break;
 			}
 			if (errno == EINTR)
 				continue;
 			err(1, "recv");
 		}
-		timerclear(&idle);
-		bored = 0;
 		packet += pkts;
 	}
 
