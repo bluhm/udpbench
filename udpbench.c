@@ -49,7 +49,7 @@ const int timeout_idle = 1;
 void alarm_handler(int);
 void udp_bind(const char *, const char *);
 void udp_connect(const char *, const char *);
-void udp_getsockname(char **, char **);
+void udp_getsockname(char *, char *);
 void udp_setbuffersize(int, int);
 void udp_setrouteralert(void);
 void udp_send(const char *, size_t, unsigned long);
@@ -69,7 +69,7 @@ void ssh_bind(const char *, const char *, const char *, const char *,
 void ssh_connect(const char *, const char *, const char *, const char *,
     int, size_t , int);
 void ssh_pipe(char **);
-void ssh_getpeername(char **, char **);
+void ssh_getpeername(char *, char *);
 void ssh_wait(void);
 
 static void
@@ -107,7 +107,6 @@ main(int argc, char *argv[])
 	unsigned long packetrate = 0;
 	const char *progname = argv[0];
 	char *hostname = NULL, *service = "12345", *remotessh = NULL;
-	char *localaddr, *localport;
 
 	if (setvbuf(stdout, NULL, _IOLBF, 0) != 0)
 		err(1, "setvbuf");
@@ -221,21 +220,28 @@ main(int argc, char *argv[])
 	if (udppayload == NULL)
 		err(1, "malloc udp payload");
 	if (sendmode) {
+		const char *remotehost, *remoteserv;
+		char remoteaddr[NI_MAXHOST], remoteport[NI_MAXSERV];
+		char localaddr[NI_MAXHOST], localport[NI_MAXSERV];
+
 		arc4random_buf(udppayload, udplength);
+		remotehost = hostname;
+		remoteserv = service;
 		if (remotessh != NULL) {
-			ssh_bind(remotessh, progname, hostname, service,
+			ssh_bind(remotessh, progname, remotehost, remoteserv,
 			    buffersize, udplength, timeout);
 #ifdef __OpenBSD__
 			if (pledge("stdio dns inet", NULL) == -1)
 				err(1, "pledge");
 #endif
-			if (divert)
-				ssh_getpeername(NULL, NULL);
-			else
-				ssh_getpeername(&hostname, &service);
+			ssh_getpeername(remoteaddr, remoteport);
+			if (!divert) {
+				remotehost = remoteaddr;
+				remoteserv = remoteport;
+			}
 		}
-		udp_connect(hostname, service);
-		udp_getsockname(NULL, NULL);
+		udp_connect(remotehost, remoteserv);
+		udp_getsockname(localaddr, localport);
 		if (buffersize)
 			udp_setbuffersize(SO_SNDBUF, buffersize);
 		if (hopbyhop) {
@@ -264,31 +270,32 @@ main(int argc, char *argv[])
 			free(service);
 		}
 	} else {
-		udp_bind(hostname, service);
-		if (divert) {
-			udp_getsockname(NULL, NULL);
-			localaddr = hostname;
-			localport = service;
-		} else
-			udp_getsockname(&localaddr, &localport);
+		const char *localhost, *localserv;
+		char localaddr[NI_MAXHOST], localport[NI_MAXSERV];
+		char remoteaddr[NI_MAXHOST], remoteport[NI_MAXSERV];
+
+		localhost = hostname;
+		localserv = service;
+		udp_bind(localhost, localserv);
+		udp_getsockname(localaddr, localport);
+		if (!divert) {
+			localhost = localaddr;
+			localserv = localport;
+		}
 		if (buffersize)
 			udp_setbuffersize(SO_RCVBUF, buffersize);
 		if (remotessh != NULL) {
-			ssh_connect(remotessh, progname, localaddr, localport,
+			ssh_connect(remotessh, progname, localhost, localserv,
 			buffersize, udplength, timeout);
 #ifdef __OpenBSD__
 			if (pledge("stdio dns inet", NULL) == -1)
 				err(1, "pledge");
 #endif
-			ssh_getpeername(NULL, NULL);
+			ssh_getpeername(remoteaddr, remoteport);
 		}
 		if (timeout > 0)
 			alarm(timeout + 4);
 		udp_receive(udppayload, udplength);
-		if (!divert) {
-			free(localaddr);
-			free(localport);
-		}
 	}
 	if (remotessh != NULL)
 		ssh_wait();
@@ -418,34 +425,22 @@ udp_connect(const char *host, const char *serv)
 }
 
 void
-udp_getsockname(char **addr, char **port)
+udp_getsockname(char *addr, char *port)
 {
 	struct sockaddr_storage ss;
-	struct sockaddr *sa = (struct sockaddr *)&ss;
-	char host[NI_MAXHOST], serv[NI_MAXSERV];
-	socklen_t len;
+	socklen_t sslen;
 	int error;
 
-	len = sizeof(ss);
-	if (getsockname(udp_socket, sa, &len) == -1)
+	sslen = sizeof(ss);
+	if (getsockname(udp_socket, (struct sockaddr *)&ss, &sslen) == -1)
 		err(1, "getsockname");
 
-	error = getnameinfo(sa, len, host, sizeof(host), serv, sizeof(serv),
-	    NI_NUMERICHOST | NI_NUMERICSERV | NI_DGRAM);
+	error = getnameinfo((struct sockaddr *)&ss, sslen, addr, NI_MAXHOST,
+	    port, NI_MAXSERV, NI_NUMERICHOST | NI_NUMERICSERV | NI_DGRAM);
 	if (error)
 		errx(1, "getnameinfo: %s", gai_strerror(error));
-	if (addr != NULL) {
-		*addr = strdup(host);
-		if (*addr == NULL)
-			err(1, "strdup addr");
-	}
-	if (port != NULL) {
-		*port = strdup(serv);
-		if (*port == NULL)
-			err(1, "strdup port");
-	}
 
-	printf("sockname: %s %s\n", host, serv);
+	printf("sockname: %s %s\n", addr, port);
 }
 
 void
@@ -911,7 +906,7 @@ ssh_pipe(char *argv[])
 }
 
 void
-ssh_getpeername(char **addr, char **port)
+ssh_getpeername(char *addr, char *port)
 {
 	char *line, *str, **wp, *words[4];
 	size_t n;
@@ -936,18 +931,10 @@ ssh_getpeername(char **addr, char **port)
 		errx(1, "ssh no sockname: %s", line);
 	if (words[1] == NULL)
 		errx(1, "ssh no addr");
-	if (addr != NULL) {
-		*addr = strdup(words[1]);
-		if (*addr == NULL)
-			err(1, "strdup addr");
-	}
+	strlcpy(addr, words[1], NI_MAXHOST);
 	if (words[2] == NULL)
 		errx(1, "ssh no port");
-	if (port != NULL) {
-		*port = strdup(words[2]);
-		if (*port == NULL)
-			err(1, "strdup port");
-	}
+	strlcpy(port, words[2], NI_MAXSERV);
 	if (words[3] != NULL)
 		errx(1, "ssh bad sockname: %s", words[3]);
 
