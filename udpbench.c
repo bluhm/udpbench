@@ -47,6 +47,8 @@ const int timeout_idle = 1;
 size_t udplength;
 long packetrate;
 
+void	udp_connect_send(void);
+void	udp_bind_receive(void);
 void	alarm_handler(int);
 int	udp_bind(int *, const char *, const char *);
 int	udp_connect(int *, const char *, const char *);
@@ -208,96 +210,106 @@ main(int argc, char *argv[])
 	if (sigaction(SIGALRM, &act, NULL) == -1)
 		err(1, "sigaction");
 
-	if (sendmode) {
-		const char *remotehost, *remoteserv;
-		char remoteaddr[NI_MAXHOST], remoteport[NI_MAXSERV];
-		char localaddr[NI_MAXHOST], localport[NI_MAXSERV];
-		long sendrate;
-		int udp_socket, udp_family = AF_UNSPEC;
-		FILE *ssh_stream;
-		pid_t ssh_pid;
-
-		remotehost = hostname;
-		remoteserv = service;
-		if (remotessh != NULL) {
-			ssh_pid = ssh_bind(&ssh_stream, remotehost, remoteserv);
-#ifdef __OpenBSD__
-			if (pledge("stdio dns inet", NULL) == -1)
-				err(1, "pledge");
-#endif
-			ssh_getpeername(ssh_stream, remoteaddr, remoteport);
-			if (!divert) {
-				remotehost = remoteaddr;
-				remoteserv = remoteport;
-			}
-		}
-		udp_socket = udp_connect(&udp_family, remotehost, remoteserv);
-		udp_getsockname(udp_socket, localaddr, localport);
-		if (buffersize)
-			udp_setbuffersize(udp_socket, SO_SNDBUF, buffersize);
-		if (hopbyhop) {
-			if (udp_family != AF_INET6)
-				errx(1, "hopbyhop only allowed with IPv6");
-			udp_setrouteralert(udp_socket);
-#ifdef __OpenBSD__
-			if (pledge("stdio dns inet", NULL) == -1)
-				err(1, "pledge");
-#endif
-		}
-		if (bitrate) {
-			unsigned long etherlen;
-
-			etherlen = udp2etherlength(udplength, udp_family, 0);
-			sendrate = bitrate / 8 / etherlen;
-			if (sendrate == 0)
-				errx(1, "bitrate %llu too small for ether %lu",
-				    bitrate, etherlen);
-		} else
-			sendrate = packetrate;
-		if (timeout > 0)
-			alarm(timeout);
-		udp_send(udp_socket, udp_family, sendrate);
-		if (close(udp_socket) == -1)
-			err(1, "close");
-		if (remotessh != NULL)
-			ssh_wait(ssh_pid, ssh_stream);
-	} else {
-		const char *localhost, *localserv;
-		char localaddr[NI_MAXHOST], localport[NI_MAXSERV];
-		char remoteaddr[NI_MAXHOST], remoteport[NI_MAXSERV];
-		int udp_socket, udp_family = AF_UNSPEC;
-		FILE *ssh_stream;
-		pid_t ssh_pid;
-
-		localhost = hostname;
-		localserv = service;
-		udp_socket = udp_bind(&udp_family, localhost, localserv);
-		udp_getsockname(udp_socket, localaddr, localport);
-		if (!divert) {
-			localhost = localaddr;
-			localserv = localport;
-		}
-		if (buffersize)
-			udp_setbuffersize(udp_socket, SO_RCVBUF, buffersize);
-		if (remotessh != NULL) {
-			ssh_pid = ssh_connect(&ssh_stream, localhost,
-			    localserv);
-#ifdef __OpenBSD__
-			if (pledge("stdio dns inet", NULL) == -1)
-				err(1, "pledge");
-#endif
-			ssh_getpeername(ssh_stream, remoteaddr, remoteport);
-		}
-		if (timeout > 0)
-			alarm(timeout + 4);
-		udp_receive(udp_socket, udp_family);
-		if (close(udp_socket) == -1)
-			err(1, "close");
-		if (remotessh != NULL)
-			ssh_wait(ssh_pid, ssh_stream);
-	}
+	if (sendmode)
+		udp_connect_send();
+	else
+		udp_bind_receive();
 
 	return 0;
+}
+
+void
+udp_connect_send(void)
+{
+	const char *remotehost, *remoteserv;
+	char remoteaddr[NI_MAXHOST], remoteport[NI_MAXSERV];
+	char localaddr[NI_MAXHOST], localport[NI_MAXSERV];
+	long sendrate;
+	int udp_socket, udp_family = AF_UNSPEC;
+	FILE *ssh_stream;
+	pid_t ssh_pid;
+
+	remotehost = hostname;
+	remoteserv = service;
+	if (remotessh != NULL) {
+		ssh_pid = ssh_bind(&ssh_stream, remotehost, remoteserv);
+#ifdef __OpenBSD__
+		if (pledge("stdio dns inet", NULL) == -1)
+			err(1, "pledge");
+#endif
+		ssh_getpeername(ssh_stream, remoteaddr, remoteport);
+		if (!divert) {
+			remotehost = remoteaddr;
+			remoteserv = remoteport;
+		}
+	}
+	udp_socket = udp_connect(&udp_family, remotehost, remoteserv);
+	udp_getsockname(udp_socket, localaddr, localport);
+	if (buffersize)
+		udp_setbuffersize(udp_socket, SO_SNDBUF, buffersize);
+	if (hopbyhop) {
+		if (udp_family != AF_INET6)
+			errx(1, "hopbyhop only allowed with IPv6");
+		udp_setrouteralert(udp_socket);
+#ifdef __OpenBSD__
+		if (pledge("stdio dns inet", NULL) == -1)
+			err(1, "pledge");
+#endif
+	}
+	if (bitrate) {
+		unsigned long etherlen;
+
+		etherlen = udp2etherlength(udplength, udp_family, 0);
+		sendrate = bitrate / 8 / etherlen;
+		if (sendrate == 0)
+			errx(1, "bitrate %llu too small for ether %lu",
+			    bitrate, etherlen);
+	} else
+		sendrate = packetrate;
+	if (timeout > 0)
+		alarm(timeout);
+	udp_send(udp_socket, udp_family, sendrate);
+	if (close(udp_socket) == -1)
+		err(1, "close");
+	if (remotessh != NULL)
+		ssh_wait(ssh_pid, ssh_stream);
+}
+
+void
+udp_bind_receive(void)
+{
+	const char *localhost, *localserv;
+	char localaddr[NI_MAXHOST], localport[NI_MAXSERV];
+	char remoteaddr[NI_MAXHOST], remoteport[NI_MAXSERV];
+	int udp_socket, udp_family = AF_UNSPEC;
+	FILE *ssh_stream;
+	pid_t ssh_pid;
+
+	localhost = hostname;
+	localserv = service;
+	udp_socket = udp_bind(&udp_family, localhost, localserv);
+	udp_getsockname(udp_socket, localaddr, localport);
+	if (!divert) {
+		localhost = localaddr;
+		localserv = localport;
+	}
+	if (buffersize)
+		udp_setbuffersize(udp_socket, SO_RCVBUF, buffersize);
+	if (remotessh != NULL) {
+		ssh_pid = ssh_connect(&ssh_stream, localhost, localserv);
+#ifdef __OpenBSD__
+		if (pledge("stdio dns inet", NULL) == -1)
+			err(1, "pledge");
+#endif
+		ssh_getpeername(ssh_stream, remoteaddr, remoteport);
+	}
+	if (timeout > 0)
+		alarm(timeout + 4);
+	udp_receive(udp_socket, udp_family);
+	if (close(udp_socket) == -1)
+		err(1, "close");
+	if (remotessh != NULL)
+		ssh_wait(ssh_pid, ssh_stream);
 }
 
 void
