@@ -305,7 +305,7 @@ alarm_handler(int sig)
 }
 
 void
-udp_bind(const char *host, const char *service)
+udp_bind(const char *host, const char *serv)
 {
 	struct addrinfo hints, *res, *res0;
 	int error;
@@ -317,7 +317,7 @@ udp_bind(const char *host, const char *service)
 	hints.ai_socktype = SOCK_DGRAM;
 	hints.ai_protocol = IPPROTO_UDP;
 	hints.ai_flags = AI_PASSIVE;
-	error = getaddrinfo(host, service, &hints, &res0);
+	error = getaddrinfo(host, serv, &hints, &res0);
 	if (error)
 		errx(1, "getaddrinfo: %s", gai_strerror(error));
 	udp_socket = -1;
@@ -377,7 +377,7 @@ udp_bind(const char *host, const char *service)
 }
 
 void
-udp_connect(const char *host, const char *service)
+udp_connect(const char *host, const char *serv)
 {
 	struct addrinfo hints, *res, *res0;
 	int error;
@@ -388,7 +388,7 @@ udp_connect(const char *host, const char *service)
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_DGRAM;
 	hints.ai_protocol = IPPROTO_UDP;
-	error = getaddrinfo(host, service, &hints, &res0);
+	error = getaddrinfo(host, serv, &hints, &res0);
 	if (error)
 		errx(1, "getaddrinfo: %s", gai_strerror(error));
 	udp_socket = -1;
@@ -798,7 +798,7 @@ udp2etherlength(unsigned long payload, int af, int vlan)
 
 void
 ssh_bind(const char *remotessh, const char *progname,
-    const char *hostname, const char *service,
+    const char *host, const char *serv,
     int buffersize, size_t udplength, int timeout)
 {
 	char *argv[18];
@@ -815,7 +815,7 @@ ssh_bind(const char *remotessh, const char *progname,
 	if (asprintf(&argv[i++], "%zu", udplength) == -1)
 		err(1, "asprintf udp length");
 	argv[i++] = "-p";
-	argv[i++] = (char *)service;
+	argv[i++] = (char *)serv;
 	argv[i++] = "-t";
 	if (asprintf(&argv[i++], "%d", timeout) == -1)
 		err(1, "asprintf timeout");
@@ -827,7 +827,7 @@ ssh_bind(const char *remotessh, const char *progname,
 			err(1, "asprintf mmsglen");
 	}
 	argv[i++] = "recv";
-	argv[i++] = (char *)hostname;
+	argv[i++] = (char *)host;
 	argv[i++] = NULL;
 
 	assert(i <= sizeof(argv) / sizeof(argv[0]));
@@ -841,7 +841,7 @@ ssh_bind(const char *remotessh, const char *progname,
 
 void
 ssh_connect(const char *remotessh, const char *progname,
-    const char *hostname, const char *service,
+    const char *host, const char *serv,
     int buffersize, size_t udplength, int timeout)
 {
 	char *argv[18];
@@ -858,7 +858,7 @@ ssh_connect(const char *remotessh, const char *progname,
 	if (asprintf(&argv[i++], "%zu", udplength) == -1)
 		err(1, "asprintf udp length");
 	argv[i++] = "-p";
-	argv[i++] = (char *)service;
+	argv[i++] = (char *)serv;
 	argv[i++] = "-t";
 	if (asprintf(&argv[i++], "%d", timeout) == -1)
 		err(1, "asprintf timeout");
@@ -870,7 +870,7 @@ ssh_connect(const char *remotessh, const char *progname,
 			err(1, "asprintf mmsglen");
 	}
 	argv[i++] = "send";
-	argv[i++] = (char *)hostname;
+	argv[i++] = (char *)host;
 	argv[i++] = NULL;
 
 	assert(i <= sizeof(argv) / sizeof(argv[0]));
