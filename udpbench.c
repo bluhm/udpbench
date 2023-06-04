@@ -283,7 +283,7 @@ main(int argc, char *argv[])
 			ssh_getpeername(NULL, NULL);
 		}
 		if (timeout > 0)
-			alarm(timeout + 2);
+			alarm(timeout + 4);
 		udp_receive(udppayload, udplength);
 		if (!divert) {
 			free(localaddr);
@@ -828,7 +828,7 @@ ssh_bind(const char *remotessh, const char *progname,
 	argv[i++] = "-p";
 	argv[i++] = (char *)service;
 	argv[i++] = "-t";
-	if (asprintf(&argv[i++], "%d", timeout > 0 ? timeout + 2 : 0) == -1)
+	if (asprintf(&argv[i++], "%d", timeout) == -1)
 		err(1, "asprintf timeout");
 	if (divert)
 		argv[i++] = "-D";
