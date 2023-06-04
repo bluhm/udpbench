@@ -248,13 +248,13 @@ main(int argc, char *argv[])
 #endif
 		}
 		if (bitrate) {
-			unsigned long framelength;
+			unsigned long etherlen;
 
-			framelength = udp2etherlength(udplength, udp_family, 0);
-			packetrate = bitrate / 8 / framelength;
+			etherlen = udp2etherlength(udplength, udp_family, 0);
+			packetrate = bitrate / 8 / etherlen;
 			if (packetrate == 0)
-				errx(1, "bitrate %llu too small for frame %lu",
-				    bitrate, framelength);
+				errx(1, "bitrate %llu too small for ether %lu",
+				    bitrate, etherlen);
 		}
 		if (timeout > 0)
 			alarm(timeout);
@@ -695,18 +695,18 @@ print_status(const char *action, unsigned long syscall, unsigned long packet,
     const struct timeval *end)
 {
 	struct timeval duration;
-	unsigned long frame, iplen, framelen;
+	unsigned long frame, iplen, etherlen;
 	double bits;
 
 	iplen = udp2iplength(paylen, af, &frame);
-	framelen = udp2etherlength(paylen, af, 0);
-	bits = (double)packet * framelen * 8;
+	etherlen = udp2etherlength(paylen, af, 0);
+	bits = (double)packet * etherlen * 8;
 	timersub(end, begin, &duration);
 	bits /= (double)duration.tv_sec + (double)duration.tv_usec / 1000000;
 	printf("%s: syscalls %lu, packets %lu, frame %lu, payload %lu, "
 	    "ip %lu, ether %lu, begin %lld.%06ld, end %lld.%06ld, "
 	    "duration %lld.%06ld, bit/s %g\n",
-	    action, syscall, packet, frame, paylen, iplen, framelen,
+	    action, syscall, packet, frame, paylen, iplen, etherlen,
 	    (long long)begin->tv_sec, begin->tv_usec,
 	    (long long)end->tv_sec, end->tv_usec,
 	    (long long)duration.tv_sec, duration.tv_usec, bits);
