@@ -200,10 +200,10 @@ main(int argc, char *argv[])
 
 #ifdef __OpenBSD__
 	if (remotessh != NULL)
-		if (pledge("stdio dns inet proc exec", NULL) == -1)
+		if (pledge("stdio dns inet proc exec", NULL) < 0)
 			err(1, "pledge");
 	if (!hopbyhop && remotessh == NULL) {
-		if (pledge("stdio dns inet", NULL) == -1)
+		if (pledge("stdio dns inet", NULL) < 0)
 			err(1, "pledge");
 	}
 #endif
@@ -211,7 +211,7 @@ main(int argc, char *argv[])
 	memset(&act, 0, sizeof(act));
 	act.sa_handler = alarm_handler;
 	act.sa_flags = SA_RESETHAND;
-	if (sigaction(SIGALRM, &act, NULL) == -1)
+	if (sigaction(SIGALRM, &act, NULL) < 0)
 		err(1, "sigaction");
 
 	/* divert packet contains header, allocate enough */
@@ -225,7 +225,7 @@ main(int argc, char *argv[])
 			ssh_bind(remotessh, progname, hostname, service,
 			    buffersize, udplength, timeout);
 #ifdef __OpenBSD__
-			if (pledge("stdio dns inet", NULL) == -1)
+			if (pledge("stdio dns inet", NULL) < 0)
 				err(1, "pledge");
 #endif
 			if (divert)
@@ -242,7 +242,7 @@ main(int argc, char *argv[])
 				errx(1, "hopbyhop only allowed with IPv6");
 			udp_setrouteralert();
 #ifdef __OpenBSD__
-			if (pledge("stdio dns inet", NULL) == -1)
+			if (pledge("stdio dns inet", NULL) < 0)
 				err(1, "pledge");
 #endif
 		}
@@ -276,7 +276,7 @@ main(int argc, char *argv[])
 			ssh_connect(remotessh, progname, localaddr, localport,
 			buffersize, udplength, timeout);
 #ifdef __OpenBSD__
-			if (pledge("stdio dns inet", NULL) == -1)
+			if (pledge("stdio dns inet", NULL) < 0)
 				err(1, "pledge");
 #endif
 			ssh_getpeername(NULL, NULL);
@@ -332,7 +332,7 @@ udp_bind(const char *host, const char *service)
 		}
 		udp_socket = socket(res->ai_family, res->ai_socktype,
 		    res->ai_protocol);
-		if (udp_socket == -1) {
+		if (udp_socket < 0) {
 			cause = "socket";
 			continue;
 		}
@@ -358,7 +358,7 @@ udp_bind(const char *host, const char *service)
 					errx(1, "divert needs bind port");
 			}
 		}
-		if (bind(udp_socket, res->ai_addr, res->ai_addrlen) == -1) {
+		if (bind(udp_socket, res->ai_addr, res->ai_addrlen) < 0) {
 			cause = "bind";
 			save_errno = errno;
 			close(udp_socket);
@@ -369,7 +369,7 @@ udp_bind(const char *host, const char *service)
 
 		break;  /* okay we got one */
 	}
-	if (udp_socket == -1)
+	if (udp_socket < 0)
 		err(1, "%s", cause);
 	udp_family = res->ai_family;
 	freeaddrinfo(res0);
@@ -394,12 +394,12 @@ udp_connect(const char *host, const char *service)
 	for (res = res0; res; res = res->ai_next) {
 		udp_socket = socket(res->ai_family, res->ai_socktype,
 		    res->ai_protocol);
-		if (udp_socket == -1) {
+		if (udp_socket < 0) {
 			cause = "socket";
 			continue;
 		}
 
-		if (connect(udp_socket, res->ai_addr, res->ai_addrlen) == -1) {
+		if (connect(udp_socket, res->ai_addr, res->ai_addrlen) < 0) {
 			cause = "connect";
 			save_errno = errno;
 			close(udp_socket);
@@ -410,7 +410,7 @@ udp_connect(const char *host, const char *service)
 
 		break;  /* okay we got one */
 	}
-	if (udp_socket == -1)
+	if (udp_socket < 0)
 		err(1, "%s", cause);
 	udp_family = res->ai_family;
 	freeaddrinfo(res0);
@@ -426,7 +426,7 @@ udp_getsockname(char **addr, char **port)
 	int error;
 
 	len = sizeof(ss);
-	if (getsockname(udp_socket, sa, &len) == -1)
+	if (getsockname(udp_socket, sa, &len) < 0)
 		err(1, "getsockname");
 
 	error = getnameinfo(sa, len, host, sizeof(host), serv, sizeof(serv),
@@ -453,7 +453,7 @@ udp_setbuffersize(int name, int size)
 	socklen_t len;
 
 	len = sizeof(size);
-	if (setsockopt(udp_socket, SOL_SOCKET, name, &size, len) == -1)
+	if (setsockopt(udp_socket, SOL_SOCKET, name, &size, len) < 0)
 		err(1, "setsockopt buffer size %d", size);
 
 }
@@ -476,8 +476,7 @@ udp_setrouteralert(void)
 	opts.pad[0] = IP6OPT_PAD1;
 	opts.pad[1] = IP6OPT_PAD1;
 	len = sizeof(opts);
-	if (setsockopt(udp_socket, IPPROTO_IPV6, IPV6_HOPOPTS, &opts, len)
-	    == -1)
+	if (setsockopt(udp_socket, IPPROTO_IPV6, IPV6_HOPOPTS, &opts, len) < 0)
 		err(1, "setsockopt router alert");
 }
 
@@ -520,7 +519,7 @@ udp_send(const char *payload, size_t udplen, unsigned long packetrate)
 	ssize_t sndlen;
 	int pkts;
 
-	if (gettimeofday(&begin, NULL) == -1)
+	if (gettimeofday(&begin, NULL) < 0)
 		err(1, "gettimeofday begin");
 	timerclear(&end);
 
@@ -537,7 +536,7 @@ udp_send(const char *payload, size_t udplen, unsigned long packetrate)
 			pkts = sendmmsg(udp_socket, mmsg, mmsghdrs, 0);
 		else
 			sndlen = send(udp_socket, payload, udplen, 0);
-		if (pkts == -1 || sndlen == -1) {
+		if (pkts < 0 || sndlen < 0) {
 			if (errno == ENOBUFS || errno == EINTR)
 				continue;
 			err(1, "send");
@@ -545,7 +544,7 @@ udp_send(const char *payload, size_t udplen, unsigned long packetrate)
 		packet += pkts;
 		if (packetrate) {
 			if (!timerisset(&end)) {
-				if (gettimeofday(&end, NULL) == -1)
+				if (gettimeofday(&end, NULL) < 0)
 					err(1, "gettimeofday delay");
 			}
 			timersub(&end, &begin, &duration);
@@ -559,13 +558,13 @@ udp_send(const char *payload, size_t udplen, unsigned long packetrate)
 			    1000000000.;
 			if (wait.tv_sec > 0 || wait.tv_nsec > 0) {
 				nanosleep(&wait, NULL);
-				if (gettimeofday(&end, NULL) == -1)
+				if (gettimeofday(&end, NULL) < 0)
 					err(1, "gettimeofday delay");
 			}
 		}
 	}
 
-	if (gettimeofday(&end, NULL) == -1)
+	if (gettimeofday(&end, NULL) < 0)
 		err(1, "gettimeofday end");
 	print_status("send", syscall, packet, udplen, udp_family, &begin, &end);
 }
@@ -615,7 +614,7 @@ udp_receive(char *payload, size_t udplen)
 	}
 	/* wait for the first packet to start timing */
 	rcvlen = recv(udp_socket, payload, udplen + 1, 0);
-	if (rcvlen == -1)
+	if (rcvlen < 0)
 		err(1, "recv 1");
 	paylen = rcvlen;
 	if (paylen > udplen)
@@ -627,14 +626,14 @@ udp_receive(char *payload, size_t udplen)
 		paylen -= headerlen;
 	}
 
-	if (gettimeofday(&begin, NULL) == -1)
+	if (gettimeofday(&begin, NULL) < 0)
 		err(1, "gettimeofday begin");
 	timerclear(&idle);
 
 	timeo.tv_sec = 0;
 	timeo.tv_usec = 100000;
 	len = sizeof(timeo);
-	if (setsockopt(udp_socket, SOL_SOCKET, SO_RCVTIMEO, &timeo, len) == -1)
+	if (setsockopt(udp_socket, SOL_SOCKET, SO_RCVTIMEO, &timeo, len) < 0)
 		err(1, "setsockopt recv timeout");
 
 	syscall = 1;
@@ -650,11 +649,11 @@ udp_receive(char *payload, size_t udplen)
 			pkts = recvmmsg(udp_socket, mmsg, mmsghdrs, 0, NULL);
 		else
 			rcvlen = recv(udp_socket, payload, udplen + 1, 0);
-		if (pkts == -1 || rcvlen == -1) {
+		if (pkts < 0 || rcvlen < 0) {
 			if (errno == EWOULDBLOCK) {
 				bored++;
 				if (bored == 1) {
-					if (gettimeofday(&idle, NULL) == -1)
+					if (gettimeofday(&idle, NULL) < 0)
 						err(1, "gettimeofday idle");
 					/* packet was seen before timeout */
 					timersub(&idle, &timeo, &idle);
@@ -674,7 +673,7 @@ udp_receive(char *payload, size_t udplen)
 		packet += pkts;
 	}
 
-	if (gettimeofday(&end, NULL) == -1)
+	if (gettimeofday(&end, NULL) < 0)
 		err(1, "gettimeofday end");
 	if (timerisset(&idle)) {
 		struct timeval tmp;
@@ -694,7 +693,7 @@ udp_receive(char *payload, size_t udplen)
 void
 udp_close(void)
 {
-	if (close(udp_socket) == -1)
+	if (close(udp_socket) < 0)
 		err(1, "close");
 }
 
@@ -829,21 +828,21 @@ ssh_bind(const char *remotessh, const char *progname,
 	argv[i++] = (char *)remotessh;
 	argv[i++] = (char *)progname;
 	argv[i++] = "-b";
-	if (asprintf(&argv[i++], "%d", buffersize) == -1)
+	if (asprintf(&argv[i++], "%d", buffersize) < 0)
 		err(1, "asprintf buffer size");
 	argv[i++] = "-l";
-	if (asprintf(&argv[i++], "%zu", udplength) == -1)
+	if (asprintf(&argv[i++], "%zu", udplength) < 0)
 		err(1, "asprintf udp length");
 	argv[i++] = "-p";
 	argv[i++] = (char *)service;
 	argv[i++] = "-t";
-	if (asprintf(&argv[i++], "%d", timeout > 0 ? timeout + 2 : 0) == -1)
+	if (asprintf(&argv[i++], "%d", timeout > 0 ? timeout + 2 : 0) < 0)
 		err(1, "asprintf timeout");
 	if (divert)
 		argv[i++] = "-D";
 	if (mmsghdrs) {
 		argv[i++] = "-m";
-		if (asprintf(&argv[i++], "%d", mmsghdrs) == -1)
+		if (asprintf(&argv[i++], "%d", mmsghdrs) < 0)
 			err(1, "asprintf mmsghdrs");
 	}
 	argv[i++] = "recv";
@@ -872,21 +871,21 @@ ssh_connect(const char *remotessh, const char *progname,
 	argv[i++] = (char *)remotessh;
 	argv[i++] = (char *)progname;
 	argv[i++] = "-b";
-	if (asprintf(&argv[i++], "%d", buffersize) == -1)
+	if (asprintf(&argv[i++], "%d", buffersize) < 0)
 		err(1, "asprintf buffer size");
 	argv[i++] = "-l";
-	if (asprintf(&argv[i++], "%zu", udplength) == -1)
+	if (asprintf(&argv[i++], "%zu", udplength) < 0)
 		err(1, "asprintf udp length");
 	argv[i++] = "-p";
 	argv[i++] = (char *)service;
 	argv[i++] = "-t";
-	if (asprintf(&argv[i++], "%d", timeout) == -1)
+	if (asprintf(&argv[i++], "%d", timeout) < 0)
 		err(1, "asprintf timeout");
 	if (hopbyhop)
 		argv[i++] = "-H";
 	if (mmsghdrs) {
 		argv[i++] = "-m";
-		if (asprintf(&argv[i++], "%d", mmsghdrs) == -1)
+		if (asprintf(&argv[i++], "%d", mmsghdrs) < 0)
 			err(1, "asprintf mmsghdrs");
 	}
 	argv[i++] = "send";
@@ -907,22 +906,22 @@ ssh_pipe(char *argv[])
 {
 	int fp[2];
 
-	if (pipe(fp) == -1)
+	if (pipe(fp) < 0)
 		err(1, "pipe");
 	ssh_pid = fork();
-	if (ssh_pid == -1)
+	if (ssh_pid < 0)
 		err(1, "fork");
 	if (ssh_pid == 0) {
-		if (close(fp[0]) == -1)
+		if (close(fp[0]) < 0)
 			err(255, "ssh close read pipe");
-		if (dup2(fp[1], 1) == -1)
+		if (dup2(fp[1], 1) < 0)
 			err(255, "dup2 pipe");
-		if (close(fp[1]) == -1)
+		if (close(fp[1]) < 0)
 			err(255, "ssh close write pipe");
 		execvp("ssh", argv);
 		err(255, "ssh exec");
 	}
-	if (close(fp[1]) == -1)
+	if (close(fp[1]) < 0)
 		err(1, "close write pipe");
 
 	ssh_stream = fdopen(fp[0], "r");
@@ -997,7 +996,7 @@ ssh_wait(void)
 	printf("%s\n", line);
 	free(line);
 
-	if (waitpid(ssh_pid, &status, 0) == -1)
+	if (waitpid(ssh_pid, &status, 0) < 0)
 		err(1, "waitpid");
 	if (status != 0)
 		errx(1, "ssh failed: %d", status);
