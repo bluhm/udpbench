@@ -703,10 +703,10 @@ print_status(const char *action, unsigned long syscall, unsigned long packet,
 	bits = (double)packet * framelen * 8;
 	timersub(end, begin, &duration);
 	bits /= (double)duration.tv_sec + (double)duration.tv_usec / 1000000;
-	printf("%s: syscalls %lu, packets %lu, frames %lu, payload %lu, "
+	printf("%s: syscalls %lu, packets %lu, frame %lu, payload %lu, "
 	    "ip %lu, ether %lu, begin %lld.%06ld, end %lld.%06ld, "
 	    "duration %lld.%06ld, bit/s %g\n",
-	    action, syscall, packet, packet * frame, paylen, iplen, framelen,
+	    action, syscall, packet, frame, paylen, iplen, framelen,
 	    (long long)begin->tv_sec, begin->tv_usec,
 	    (long long)end->tv_sec, end->tv_usec,
 	    (long long)duration.tv_sec, duration.tv_usec, bits);
