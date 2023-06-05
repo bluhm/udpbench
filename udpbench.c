@@ -38,10 +38,14 @@
 
 sig_atomic_t alarm_signaled;
 
+const char *progname, *hostname, *service = "12345", *remotessh;
 int divert, hopbyhop;
-int mmsglen;
+long long bitrate;
+int buffersize, mmsglen;
+int timeout = 1;
 const int timeout_idle = 1;
 size_t udplength;
+long packetrate;
 
 void	alarm_handler(int);
 int	udp_bind(int *, const char *, const char *);
@@ -60,10 +64,8 @@ void print_status(const char *, unsigned long, unsigned long, unsigned long,
 unsigned long udp2iplength(unsigned long, int, unsigned long *);
 unsigned long udp2etherlength(unsigned long , int, int);
 
-pid_t	ssh_bind(FILE **, const char *, const char *, const char *,
-    const char *, int, int);
-pid_t	ssh_connect(FILE **, const char *, const char *, const char *,
-    const char *, int, int);
+pid_t	ssh_bind(FILE **, const char *, const char *);
+pid_t	ssh_connect(FILE **, const char *, const char *);
 pid_t	ssh_pipe(FILE **, char **);
 void	ssh_getpeername(FILE *, char *, char *);
 void	ssh_wait(pid_t, FILE *);
@@ -96,11 +98,9 @@ main(int argc, char *argv[])
 {
 	struct sigaction act;
 	const char *errstr;
-	int ch, buffersize = 0, timeout = 1, sendmode;
-	unsigned long long bitrate = 0;
-	unsigned long packetrate = 0;
-	const char *progname = argv[0];
-	char *hostname = NULL, *service = "12345", *remotessh = NULL;
+	int ch, sendmode;
+
+	progname = argv[0];
 
 	if (setvbuf(stdout, NULL, _IOLBF, 0) != 0)
 		err(1, "setvbuf");
@@ -219,8 +219,7 @@ main(int argc, char *argv[])
 		remotehost = hostname;
 		remoteserv = service;
 		if (remotessh != NULL) {
-			ssh_pid = ssh_bind(&ssh_stream, remotessh, progname,
-			    remotehost, remoteserv, buffersize, timeout);
+			ssh_pid = ssh_bind(&ssh_stream, remotehost, remoteserv);
 #ifdef __OpenBSD__
 			if (pledge("stdio dns inet", NULL) == -1)
 				err(1, "pledge");
@@ -279,8 +278,8 @@ main(int argc, char *argv[])
 		if (buffersize)
 			udp_setbuffersize(udp_socket, SO_RCVBUF, buffersize);
 		if (remotessh != NULL) {
-			ssh_pid = ssh_connect(&ssh_stream, remotessh, progname,
-			localhost, localserv, buffersize, timeout);
+			ssh_pid = ssh_connect(&ssh_stream, localhost,
+			    localserv);
 #ifdef __OpenBSD__
 			if (pledge("stdio dns inet", NULL) == -1)
 				err(1, "pledge");
@@ -806,9 +805,7 @@ udp2etherlength(unsigned long payload, int af, int vlan)
 }
 
 pid_t
-ssh_bind(FILE **ssh_stream, const char *remotessh, const char *progname,
-    const char *host, const char *serv,
-    int buffersize, int timeout)
+ssh_bind(FILE **ssh_stream, const char *host, const char *serv)
 {
 	char *argv[18];
 	size_t i = 0;
@@ -851,9 +848,7 @@ ssh_bind(FILE **ssh_stream, const char *remotessh, const char *progname,
 }
 
 pid_t
-ssh_connect(FILE **ssh_stream, const char *remotessh, const char *progname,
-    const char *host, const char *serv,
-    int buffersize, int timeout)
+ssh_connect(FILE **ssh_stream, const char *host, const char *serv)
 {
 	char *argv[18];
 	size_t i = 0;
