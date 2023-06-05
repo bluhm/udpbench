@@ -212,6 +212,7 @@ main(int argc, char *argv[])
 		const char *remotehost, *remoteserv;
 		char remoteaddr[NI_MAXHOST], remoteport[NI_MAXSERV];
 		char localaddr[NI_MAXHOST], localport[NI_MAXSERV];
+		long sendrate;
 		int udp_socket, udp_family = AF_UNSPEC;
 		FILE *ssh_stream;
 		pid_t ssh_pid;
@@ -247,14 +248,15 @@ main(int argc, char *argv[])
 			unsigned long etherlen;
 
 			etherlen = udp2etherlength(udplength, udp_family, 0);
-			packetrate = bitrate / 8 / etherlen;
-			if (packetrate == 0)
+			sendrate = bitrate / 8 / etherlen;
+			if (sendrate == 0)
 				errx(1, "bitrate %llu too small for ether %lu",
 				    bitrate, etherlen);
-		}
+		} else
+			sendrate = packetrate;
 		if (timeout > 0)
 			alarm(timeout);
-		udp_send(udp_socket, udp_family, packetrate);
+		udp_send(udp_socket, udp_family, sendrate);
 		if (close(udp_socket) == -1)
 			err(1, "close");
 		if (remotessh != NULL)
