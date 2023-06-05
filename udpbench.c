@@ -41,6 +41,7 @@ sig_atomic_t alarm_signaled;
 int divert, hopbyhop;
 int mmsglen;
 const int timeout_idle = 1;
+size_t udplength;
 
 void	alarm_handler(int);
 int	udp_bind(int *, const char *, const char *);
@@ -48,8 +49,8 @@ int	udp_connect(int *, const char *, const char *);
 void	udp_getsockname(int, char *, char *);
 void	udp_setbuffersize(int, int, int);
 void	udp_setrouteralert(int);
-void	udp_send(int, int, const char *, size_t, unsigned long);
-void	udp_receive(int, int, char *, size_t);
+void	udp_send(int, int, const char *, unsigned long);
+void	udp_receive(int, int, char *);
 
 struct mmsghdr	*mmsg_alloc(int, size_t, int);
 void		 mmsg_free(struct mmsghdr *);
@@ -60,9 +61,9 @@ unsigned long udp2iplength(unsigned long, int, unsigned long *);
 unsigned long udp2etherlength(unsigned long , int, int);
 
 pid_t	ssh_bind(FILE **, const char *, const char *, const char *,
-    const char *, int, size_t , int);
+    const char *, int, int);
 pid_t	ssh_connect(FILE **, const char *, const char *, const char *,
-    const char *, int, size_t , int);
+    const char *, int, int);
 pid_t	ssh_pipe(FILE **, char **);
 void	ssh_getpeername(FILE *, char *, char *);
 void	ssh_wait(pid_t, FILE *);
@@ -96,7 +97,6 @@ main(int argc, char *argv[])
 	struct sigaction act;
 	const char *errstr;
 	char *udppayload;
-	size_t udplength = 0;
 	int ch, buffersize = 0, timeout = 1, sendmode;
 	unsigned long long bitrate = 0;
 	unsigned long packetrate = 0;
@@ -227,8 +227,7 @@ main(int argc, char *argv[])
 		remoteserv = service;
 		if (remotessh != NULL) {
 			ssh_pid = ssh_bind(&ssh_stream, remotessh, progname,
-			    remotehost, remoteserv, buffersize, udplength,
-			    timeout);
+			    remotehost, remoteserv, buffersize, timeout);
 #ifdef __OpenBSD__
 			if (pledge("stdio dns inet", NULL) == -1)
 				err(1, "pledge");
@@ -263,8 +262,7 @@ main(int argc, char *argv[])
 		}
 		if (timeout > 0)
 			alarm(timeout);
-		udp_send(udp_socket, udp_family, udppayload, udplength,
-		    packetrate);
+		udp_send(udp_socket, udp_family, udppayload, packetrate);
 		if (close(udp_socket) == -1)
 			err(1, "close");
 		if (remotessh != NULL)
@@ -289,7 +287,7 @@ main(int argc, char *argv[])
 			udp_setbuffersize(udp_socket, SO_RCVBUF, buffersize);
 		if (remotessh != NULL) {
 			ssh_pid = ssh_connect(&ssh_stream, remotessh, progname,
-			localhost, localserv, buffersize, udplength, timeout);
+			localhost, localserv, buffersize, timeout);
 #ifdef __OpenBSD__
 			if (pledge("stdio dns inet", NULL) == -1)
 				err(1, "pledge");
@@ -298,7 +296,7 @@ main(int argc, char *argv[])
 		}
 		if (timeout > 0)
 			alarm(timeout + 4);
-		udp_receive(udp_socket, udp_family, udppayload, udplength);
+		udp_receive(udp_socket, udp_family, udppayload);
 		if (close(udp_socket) == -1)
 			err(1, "close");
 		if (remotessh != NULL)
@@ -526,16 +524,22 @@ mmsg_free(struct mmsghdr *mmsg)
 }
 
 void
-udp_send(int udp_socket, int udp_family, const char *payload, size_t udplen,
-    unsigned long packetrate)
+udp_send(int udp_socket, int udp_family, const char *payload,
+    unsigned long sendrate)
 {
 	struct timeval begin, end, duration;
 	struct timespec wait;
 	unsigned long syscall, packet;
-	double expectduration, waittime;
 	struct mmsghdr *mmsg;
+	size_t udplen;
 	ssize_t sndlen;
 	int pkts;
+
+	udplen = udplength;
+	if (mmsglen)
+		mmsg = mmsg_alloc(mmsglen, udplen, 1);
+	else
+		pkts = 1;
 
 	if (gettimeofday(&begin, NULL) == -1)
 		err(1, "gettimeofday begin");
@@ -544,10 +548,6 @@ udp_send(int udp_socket, int udp_family, const char *payload, size_t udplen,
 	syscall = 0;
 	packet = 0;
 	sndlen = 0;
-	if (mmsglen)
-		mmsg = mmsg_alloc(mmsglen, udplen, 1);
-	else
-		pkts = 1;
 	while (!alarm_signaled) {
 		syscall++;
 		if (mmsglen)
@@ -560,7 +560,9 @@ udp_send(int udp_socket, int udp_family, const char *payload, size_t udplen,
 			err(1, "send");
 		}
 		packet += pkts;
-		if (packetrate) {
+		if (sendrate) {
+			double expectduration, waittime;
+
 			if (!timerisset(&end)) {
 				if (gettimeofday(&end, NULL) == -1)
 					err(1, "gettimeofday delay");
@@ -568,7 +570,7 @@ udp_send(int udp_socket, int udp_family, const char *payload, size_t udplen,
 			timersub(&end, &begin, &duration);
 			if (!timerisset(&duration))
 				duration.tv_usec = 1;
-			expectduration = (double)packet / (double)packetrate;
+			expectduration = (double)packet / (double)sendrate;
 			waittime = expectduration - (double)duration.tv_sec -
 			    (double)duration.tv_usec / 1000000.;
 			wait.tv_sec = waittime;
@@ -590,21 +592,31 @@ udp_send(int udp_socket, int udp_family, const char *payload, size_t udplen,
 }
 
 void
-udp_receive(int udp_socket, int udp_family, char *payload, size_t udplen)
+udp_receive(int udp_socket, int udp_family, char *payload)
 {
 	struct timeval begin, idle, end, timeo;
 	unsigned long syscall, packet;
 	unsigned long headerlen, paylen;
 	struct mmsghdr *mmsg;
+	size_t udplen;
 	ssize_t rcvlen;
 	socklen_t len;
 	int pkts;
 
+	udplen = udplength;
 	if (divert) {
-		headerlen = sizeof(struct udphdr) + ((udp_family == AF_INET) ?
-		    sizeof(struct ip) : sizeof(struct ip6_hdr));
+		headerlen = sizeof(struct udphdr);
+		if (udp_family == AF_INET)
+			headerlen += sizeof(struct ip);
+		if (udp_family == AF_INET6)
+			headerlen += sizeof(struct ip6_hdr);
 		udplen += headerlen;
 	}
+	if (mmsglen)
+		mmsg = mmsg_alloc(mmsglen, udplen + 1, 0);
+	else
+		pkts = 1;
+
 	/* wait for the first packet to start timing */
 	rcvlen = recv(udp_socket, payload, udplen + 1, 0);
 	if (rcvlen == -1)
@@ -631,10 +643,6 @@ udp_receive(int udp_socket, int udp_family, char *payload, size_t udplen)
 
 	syscall = 1;
 	packet = 1;
-	if (mmsglen)
-		mmsg = mmsg_alloc(mmsglen, udplen + 1, 0);
-	else
-		pkts = 1;
 	while (!alarm_signaled) {
 		syscall++;
 		if (mmsglen)
@@ -794,7 +802,7 @@ udp2etherlength(unsigned long payload, int af, int vlan)
 pid_t
 ssh_bind(FILE **ssh_stream, const char *remotessh, const char *progname,
     const char *host, const char *serv,
-    int buffersize, size_t udplength, int timeout)
+    int buffersize, int timeout)
 {
 	char *argv[18];
 	size_t i = 0;
@@ -839,7 +847,7 @@ ssh_bind(FILE **ssh_stream, const char *remotessh, const char *progname,
 pid_t
 ssh_connect(FILE **ssh_stream, const char *remotessh, const char *progname,
     const char *host, const char *serv,
-    int buffersize, size_t udplength, int timeout)
+    int buffersize, int timeout)
 {
 	char *argv[18];
 	size_t i = 0;
