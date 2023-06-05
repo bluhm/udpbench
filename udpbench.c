@@ -938,7 +938,7 @@ ssh_getpeername(char *addr, char *port)
 	if (words[3] != NULL)
 		errx(1, "ssh bad sockname: %s", words[3]);
 
-	printf("peername: %s %s\n", words[1], words[2]);
+	printf("peername: %s %s\n", addr, port);
 	free(line);
 }
 
