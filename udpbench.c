@@ -42,8 +42,6 @@ int divert, hopbyhop;
 int udp_family;
 int udp_socket = -1;
 int mmsglen;
-FILE *ssh_stream;
-pid_t ssh_pid;
 const int timeout_idle = 1;
 
 void alarm_handler(int);
@@ -64,13 +62,13 @@ void print_status(const char *, unsigned long, unsigned long, unsigned long,
 unsigned long udp2iplength(unsigned long, int, unsigned long *);
 unsigned long udp2etherlength(unsigned long , int, int);
 
-void ssh_bind(const char *, const char *, const char *, const char *,
-    int, size_t , int);
-void ssh_connect(const char *, const char *, const char *, const char *,
-    int, size_t , int);
-void ssh_pipe(char **);
-void ssh_getpeername(char *, char *);
-void ssh_wait(void);
+pid_t	ssh_bind(FILE **, const char *, const char *, const char *,
+    const char *, int, size_t , int);
+pid_t	ssh_connect(FILE **, const char *, const char *, const char *,
+    const char *, int, size_t , int);
+pid_t	ssh_pipe(FILE **, char **);
+void	ssh_getpeername(FILE *, char *, char *);
+void	ssh_wait(pid_t, FILE *);
 
 static void
 usage(void)
@@ -223,18 +221,21 @@ main(int argc, char *argv[])
 		const char *remotehost, *remoteserv;
 		char remoteaddr[NI_MAXHOST], remoteport[NI_MAXSERV];
 		char localaddr[NI_MAXHOST], localport[NI_MAXSERV];
+		FILE *ssh_stream;
+		pid_t ssh_pid;
 
 		arc4random_buf(udppayload, udplength);
 		remotehost = hostname;
 		remoteserv = service;
 		if (remotessh != NULL) {
-			ssh_bind(remotessh, progname, remotehost, remoteserv,
-			    buffersize, udplength, timeout);
+			ssh_pid = ssh_bind(&ssh_stream, remotessh, progname,
+			    remotehost, remoteserv, buffersize, udplength,
+			    timeout);
 #ifdef __OpenBSD__
 			if (pledge("stdio dns inet", NULL) == -1)
 				err(1, "pledge");
 #endif
-			ssh_getpeername(remoteaddr, remoteport);
+			ssh_getpeername(ssh_stream, remoteaddr, remoteport);
 			if (!divert) {
 				remotehost = remoteaddr;
 				remoteserv = remoteport;
@@ -265,10 +266,14 @@ main(int argc, char *argv[])
 		if (timeout > 0)
 			alarm(timeout);
 		udp_send(udppayload, udplength, packetrate);
+		if (remotessh != NULL)
+			ssh_wait(ssh_pid, ssh_stream);
 	} else {
 		const char *localhost, *localserv;
 		char localaddr[NI_MAXHOST], localport[NI_MAXSERV];
 		char remoteaddr[NI_MAXHOST], remoteport[NI_MAXSERV];
+		FILE *ssh_stream;
+		pid_t ssh_pid;
 
 		localhost = hostname;
 		localserv = service;
@@ -281,20 +286,20 @@ main(int argc, char *argv[])
 		if (buffersize)
 			udp_setbuffersize(SO_RCVBUF, buffersize);
 		if (remotessh != NULL) {
-			ssh_connect(remotessh, progname, localhost, localserv,
-			buffersize, udplength, timeout);
+			ssh_pid = ssh_connect(&ssh_stream, remotessh, progname,
+			localhost, localserv, buffersize, udplength, timeout);
 #ifdef __OpenBSD__
 			if (pledge("stdio dns inet", NULL) == -1)
 				err(1, "pledge");
 #endif
-			ssh_getpeername(remoteaddr, remoteport);
+			ssh_getpeername(ssh_stream, remoteaddr, remoteport);
 		}
 		if (timeout > 0)
 			alarm(timeout + 4);
 		udp_receive(udppayload, udplength);
+		if (remotessh != NULL)
+			ssh_wait(ssh_pid, ssh_stream);
 	}
-	if (remotessh != NULL)
-		ssh_wait();
 	udp_close();
 	free(udppayload);
 
@@ -787,13 +792,14 @@ udp2etherlength(unsigned long payload, int af, int vlan)
 	return framelength;
 }
 
-void
-ssh_bind(const char *remotessh, const char *progname,
+pid_t
+ssh_bind(FILE **ssh_stream, const char *remotessh, const char *progname,
     const char *host, const char *serv,
     int buffersize, size_t udplength, int timeout)
 {
 	char *argv[18];
 	size_t i = 0;
+	pid_t ssh_pid;
 
 	argv[i++] = "ssh";
 	argv[i++] = "-nT";
@@ -823,20 +829,22 @@ ssh_bind(const char *remotessh, const char *progname,
 
 	assert(i <= sizeof(argv) / sizeof(argv[0]));
 
-	ssh_pipe(argv);
+	ssh_pid = ssh_pipe(ssh_stream, argv);
 
 	free(argv[5]);
 	free(argv[7]);
 	free(argv[11]);
+	return ssh_pid;
 }
 
-void
-ssh_connect(const char *remotessh, const char *progname,
+pid_t
+ssh_connect(FILE **ssh_stream, const char *remotessh, const char *progname,
     const char *host, const char *serv,
     int buffersize, size_t udplength, int timeout)
 {
 	char *argv[18];
 	size_t i = 0;
+	pid_t ssh_pid;
 
 	argv[i++] = "ssh";
 	argv[i++] = "-nT";
@@ -866,17 +874,19 @@ ssh_connect(const char *remotessh, const char *progname,
 
 	assert(i <= sizeof(argv) / sizeof(argv[0]));
 
-	ssh_pipe(argv);
+	ssh_pid = ssh_pipe(ssh_stream, argv);
 
 	free(argv[5]);
 	free(argv[7]);
 	free(argv[11]);
+	return ssh_pid;
 }
 
-void
-ssh_pipe(char *argv[])
+pid_t
+ssh_pipe(FILE **ssh_stream, char *argv[])
 {
 	int fp[2];
+	pid_t ssh_pid;
 
 	if (pipe(fp) == -1)
 		err(1, "pipe");
@@ -896,13 +906,13 @@ ssh_pipe(char *argv[])
 	if (close(fp[1]) == -1)
 		err(1, "close write pipe");
 
-	ssh_stream = fdopen(fp[0], "r");
-	if (ssh_stream == NULL)
+	if ((*ssh_stream = fdopen(fp[0], "r")) == NULL)
 		err(1, "fdopen");
+	return ssh_pid;
 }
 
 void
-ssh_getpeername(char *addr, char *port)
+ssh_getpeername(FILE *ssh_stream, char *addr, char *port)
 {
 	char *line, *str, **wp, *words[4];
 	size_t n;
@@ -939,7 +949,7 @@ ssh_getpeername(char *addr, char *port)
 }
 
 void
-ssh_wait(void)
+ssh_wait(pid_t ssh_pid, FILE *ssh_stream)
 {
 	char *line;
 	size_t n;
@@ -959,6 +969,8 @@ ssh_wait(void)
 		line[len-1] = '\0';
 	printf("%s\n", line);
 	free(line);
+	if (fclose(ssh_stream) == EOF)
+		err(1, "fclose");
 
 	if (waitpid(ssh_pid, &status, 0) == -1)
 		err(1, "waitpid");
