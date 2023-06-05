@@ -623,8 +623,10 @@ udp_receive(int udp_socket, int udp_family)
 	if (rcvlen == -1)
 		err(1, "recv 1");
 	paylen = rcvlen;
-	if (paylen > udplen)
+	if (paylen < udplen)
 		warnx("receive packet truncated %zd", rcvlen);
+	if (paylen > udplen)
+		warnx("receive packet oversized %zd", rcvlen);
 	if (divert) {
 		if (paylen < headerlen)
 			errx(1, "receive length %zd too short for header",
