@@ -49,8 +49,8 @@ int	udp_connect(int *, const char *, const char *);
 void	udp_getsockname(int, char *, char *);
 void	udp_setbuffersize(int, int, int);
 void	udp_setrouteralert(int);
-void	udp_send(int, int, const char *, unsigned long);
-void	udp_receive(int, int, char *);
+void	udp_send(int, int, unsigned long);
+void	udp_receive(int, int);
 
 struct mmsghdr	*mmsg_alloc(int, size_t, int);
 void		 mmsg_free(struct mmsghdr *);
@@ -96,7 +96,6 @@ main(int argc, char *argv[])
 {
 	struct sigaction act;
 	const char *errstr;
-	char *udppayload;
 	int ch, buffersize = 0, timeout = 1, sendmode;
 	unsigned long long bitrate = 0;
 	unsigned long packetrate = 0;
@@ -209,11 +208,6 @@ main(int argc, char *argv[])
 	if (sigaction(SIGALRM, &act, NULL) == -1)
 		err(1, "sigaction");
 
-	/* divert packet contains header, allocate enough */
-	udppayload = malloc(sizeof(struct ip6_hdr) + sizeof(struct udphdr) +
-	    udplength + 1);
-	if (udppayload == NULL)
-		err(1, "malloc udp payload");
 	if (sendmode) {
 		const char *remotehost, *remoteserv;
 		char remoteaddr[NI_MAXHOST], remoteport[NI_MAXSERV];
@@ -222,7 +216,6 @@ main(int argc, char *argv[])
 		FILE *ssh_stream;
 		pid_t ssh_pid;
 
-		arc4random_buf(udppayload, udplength);
 		remotehost = hostname;
 		remoteserv = service;
 		if (remotessh != NULL) {
@@ -262,7 +255,7 @@ main(int argc, char *argv[])
 		}
 		if (timeout > 0)
 			alarm(timeout);
-		udp_send(udp_socket, udp_family, udppayload, packetrate);
+		udp_send(udp_socket, udp_family, packetrate);
 		if (close(udp_socket) == -1)
 			err(1, "close");
 		if (remotessh != NULL)
@@ -296,13 +289,12 @@ main(int argc, char *argv[])
 		}
 		if (timeout > 0)
 			alarm(timeout + 4);
-		udp_receive(udp_socket, udp_family, udppayload);
+		udp_receive(udp_socket, udp_family);
 		if (close(udp_socket) == -1)
 			err(1, "close");
 		if (remotessh != NULL)
 			ssh_wait(ssh_pid, ssh_stream);
 	}
-	free(udppayload);
 
 	return 0;
 }
@@ -524,22 +516,26 @@ mmsg_free(struct mmsghdr *mmsg)
 }
 
 void
-udp_send(int udp_socket, int udp_family, const char *payload,
-    unsigned long sendrate)
+udp_send(int udp_socket, int udp_family, unsigned long sendrate)
 {
 	struct timeval begin, end, duration;
 	struct timespec wait;
 	unsigned long syscall, packet;
 	struct mmsghdr *mmsg;
+	char *payload;
 	size_t udplen;
 	ssize_t sndlen;
 	int pkts;
 
 	udplen = udplength;
-	if (mmsglen)
+	if (mmsglen) {
 		mmsg = mmsg_alloc(mmsglen, udplen, 1);
-	else
+	} else {
 		pkts = 1;
+		if ((payload = malloc(udplen)) == NULL)
+			err(1, "malloc payload");
+		arc4random_buf(payload, udplen);
+	}
 
 	if (gettimeofday(&begin, NULL) == -1)
 		err(1, "gettimeofday begin");
@@ -589,15 +585,18 @@ udp_send(int udp_socket, int udp_family, const char *payload,
 	print_status("send", syscall, packet, udplen, udp_family, &begin, &end);
 	if (mmsglen)
 		mmsg_free(mmsg);
+	else
+		free(payload);
 }
 
 void
-udp_receive(int udp_socket, int udp_family, char *payload)
+udp_receive(int udp_socket, int udp_family)
 {
 	struct timeval begin, idle, end, timeo;
 	unsigned long syscall, packet;
 	unsigned long headerlen, paylen;
 	struct mmsghdr *mmsg;
+	char *payload;
 	size_t udplen;
 	ssize_t rcvlen;
 	socklen_t len;
@@ -616,6 +615,8 @@ udp_receive(int udp_socket, int udp_family, char *payload)
 		mmsg = mmsg_alloc(mmsglen, udplen + 1, 0);
 	else
 		pkts = 1;
+	if ((payload = malloc(udplen + 1)) == NULL)
+		err(1, "malloc payload");
 
 	/* wait for the first packet to start timing */
 	rcvlen = recv(udp_socket, payload, udplen + 1, 0);
@@ -679,6 +680,9 @@ udp_receive(int udp_socket, int udp_family, char *payload)
 	if (idle.tv_sec < 1)
 		errx(1, "not enough idle time: %lld.%06ld",
 		    (long long)idle.tv_sec, idle.tv_usec);
+	if (mmsglen)
+		mmsg_free(mmsg);
+	free(payload);
 }
 
 void
