@@ -324,7 +324,7 @@ udp_bind(int *udp_family, const char *host, const char *serv)
 	const char *cause = NULL;
 
 	memset(&hints, 0, sizeof(hints));
-	hints.ai_family = AF_UNSPEC;
+	hints.ai_family = *udp_family;
 	hints.ai_socktype = SOCK_DGRAM;
 	hints.ai_protocol = IPPROTO_UDP;
 	hints.ai_flags = AI_PASSIVE;
@@ -397,7 +397,7 @@ udp_connect(int *udp_family, const char *host, const char *serv)
 	const char *cause = NULL;
 
 	memset(&hints, 0, sizeof(hints));
-	hints.ai_family = AF_UNSPEC;
+	hints.ai_family = *udp_family;
 	hints.ai_socktype = SOCK_DGRAM;
 	hints.ai_protocol = IPPROTO_UDP;
 	error = getaddrinfo(host, serv, &hints, &res0);
