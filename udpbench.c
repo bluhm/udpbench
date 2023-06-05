@@ -39,20 +39,17 @@
 sig_atomic_t alarm_signaled;
 
 int divert, hopbyhop;
-int udp_family;
-int udp_socket = -1;
 int mmsglen;
 const int timeout_idle = 1;
 
-void alarm_handler(int);
-void udp_bind(const char *, const char *);
-void udp_connect(const char *, const char *);
-void udp_getsockname(char *, char *);
-void udp_setbuffersize(int, int);
-void udp_setrouteralert(void);
-void udp_send(const char *, size_t, unsigned long);
-void udp_receive(char *, size_t);
-void udp_close(void);
+void	alarm_handler(int);
+int	udp_bind(int *, const char *, const char *);
+int	udp_connect(int *, const char *, const char *);
+void	udp_getsockname(int, char *, char *);
+void	udp_setbuffersize(int, int, int);
+void	udp_setrouteralert(int);
+void	udp_send(int, int, const char *, size_t, unsigned long);
+void	udp_receive(int, int, char *, size_t);
 
 struct mmsghdr	*mmsg_alloc(int, size_t, int);
 void		 mmsg_free(struct mmsghdr *);
@@ -221,6 +218,7 @@ main(int argc, char *argv[])
 		const char *remotehost, *remoteserv;
 		char remoteaddr[NI_MAXHOST], remoteport[NI_MAXSERV];
 		char localaddr[NI_MAXHOST], localport[NI_MAXSERV];
+		int udp_socket, udp_family = AF_UNSPEC;
 		FILE *ssh_stream;
 		pid_t ssh_pid;
 
@@ -241,14 +239,14 @@ main(int argc, char *argv[])
 				remoteserv = remoteport;
 			}
 		}
-		udp_connect(remotehost, remoteserv);
-		udp_getsockname(localaddr, localport);
+		udp_socket = udp_connect(&udp_family, remotehost, remoteserv);
+		udp_getsockname(udp_socket, localaddr, localport);
 		if (buffersize)
-			udp_setbuffersize(SO_SNDBUF, buffersize);
+			udp_setbuffersize(udp_socket, SO_SNDBUF, buffersize);
 		if (hopbyhop) {
 			if (udp_family != AF_INET6)
 				errx(1, "hopbyhop only allowed with IPv6");
-			udp_setrouteralert();
+			udp_setrouteralert(udp_socket);
 #ifdef __OpenBSD__
 			if (pledge("stdio dns inet", NULL) == -1)
 				err(1, "pledge");
@@ -265,26 +263,30 @@ main(int argc, char *argv[])
 		}
 		if (timeout > 0)
 			alarm(timeout);
-		udp_send(udppayload, udplength, packetrate);
+		udp_send(udp_socket, udp_family, udppayload, udplength,
+		    packetrate);
+		if (close(udp_socket) == -1)
+			err(1, "close");
 		if (remotessh != NULL)
 			ssh_wait(ssh_pid, ssh_stream);
 	} else {
 		const char *localhost, *localserv;
 		char localaddr[NI_MAXHOST], localport[NI_MAXSERV];
 		char remoteaddr[NI_MAXHOST], remoteport[NI_MAXSERV];
+		int udp_socket, udp_family = AF_UNSPEC;
 		FILE *ssh_stream;
 		pid_t ssh_pid;
 
 		localhost = hostname;
 		localserv = service;
-		udp_bind(localhost, localserv);
-		udp_getsockname(localaddr, localport);
+		udp_socket = udp_bind(&udp_family, localhost, localserv);
+		udp_getsockname(udp_socket, localaddr, localport);
 		if (!divert) {
 			localhost = localaddr;
 			localserv = localport;
 		}
 		if (buffersize)
-			udp_setbuffersize(SO_RCVBUF, buffersize);
+			udp_setbuffersize(udp_socket, SO_RCVBUF, buffersize);
 		if (remotessh != NULL) {
 			ssh_pid = ssh_connect(&ssh_stream, remotessh, progname,
 			localhost, localserv, buffersize, udplength, timeout);
@@ -296,11 +298,12 @@ main(int argc, char *argv[])
 		}
 		if (timeout > 0)
 			alarm(timeout + 4);
-		udp_receive(udppayload, udplength);
+		udp_receive(udp_socket, udp_family, udppayload, udplength);
+		if (close(udp_socket) == -1)
+			err(1, "close");
 		if (remotessh != NULL)
 			ssh_wait(ssh_pid, ssh_stream);
 	}
-	udp_close();
 	free(udppayload);
 
 	return 0;
@@ -312,11 +315,11 @@ alarm_handler(int sig)
 	alarm_signaled = 1;
 }
 
-void
-udp_bind(const char *host, const char *serv)
+int
+udp_bind(int *udp_family, const char *host, const char *serv)
 {
 	struct addrinfo hints, *res, *res0;
-	int error;
+	int error, udp_socket;
 	int save_errno;
 	const char *cause = NULL;
 
@@ -380,15 +383,16 @@ udp_bind(const char *host, const char *serv)
 	}
 	if (udp_socket == -1)
 		err(1, "%s", cause);
-	udp_family = res->ai_family;
+	*udp_family = res->ai_family;
 	freeaddrinfo(res0);
+	return udp_socket;
 }
 
-void
-udp_connect(const char *host, const char *serv)
+int
+udp_connect(int *udp_family, const char *host, const char *serv)
 {
 	struct addrinfo hints, *res, *res0;
-	int error;
+	int error, udp_socket;
 	int save_errno;
 	const char *cause = NULL;
 
@@ -421,12 +425,13 @@ udp_connect(const char *host, const char *serv)
 	}
 	if (udp_socket == -1)
 		err(1, "%s", cause);
-	udp_family = res->ai_family;
+	*udp_family = res->ai_family;
 	freeaddrinfo(res0);
+	return udp_socket;
 }
 
 void
-udp_getsockname(char *addr, char *port)
+udp_getsockname(int udp_socket, char *addr, char *port)
 {
 	struct sockaddr_storage ss;
 	socklen_t sslen;
@@ -445,7 +450,7 @@ udp_getsockname(char *addr, char *port)
 }
 
 void
-udp_setbuffersize(int name, int size)
+udp_setbuffersize(int udp_socket, int name, int size)
 {
 	socklen_t len;
 
@@ -456,7 +461,7 @@ udp_setbuffersize(int name, int size)
 }
 
 void
-udp_setrouteralert(void)
+udp_setrouteralert(int udp_socket)
 {
 	struct {
 		struct ip6_hbh		hbh;
@@ -521,7 +526,8 @@ mmsg_free(struct mmsghdr *mmsg)
 }
 
 void
-udp_send(const char *payload, size_t udplen, unsigned long packetrate)
+udp_send(int udp_socket, int udp_family, const char *payload, size_t udplen,
+    unsigned long packetrate)
 {
 	struct timeval begin, end, duration;
 	struct timespec wait;
@@ -584,7 +590,7 @@ udp_send(const char *payload, size_t udplen, unsigned long packetrate)
 }
 
 void
-udp_receive(char *payload, size_t udplen)
+udp_receive(int udp_socket, int udp_family, char *payload, size_t udplen)
 {
 	struct timeval begin, idle, end, timeo;
 	unsigned long syscall, packet;
@@ -665,13 +671,6 @@ udp_receive(char *payload, size_t udplen)
 	if (idle.tv_sec < 1)
 		errx(1, "not enough idle time: %lld.%06ld",
 		    (long long)idle.tv_sec, idle.tv_usec);
-}
-
-void
-udp_close(void)
-{
-	if (close(udp_socket) == -1)
-		err(1, "close");
 }
 
 void
