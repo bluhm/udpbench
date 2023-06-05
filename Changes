@@ -1,36 +1,44 @@
 Revision history for udpbench udp network benchmarking tool.
 
-1.06
+1.06 2023-06-05
+  * Create gpg signature .asc for released .tar.gz files.
+  * Lot of code cleanup and refactoring.
+  * Print warning if received packet is truncated or oversized.
+  * Recv timeout is increaed by 4 on the local side.
+  * Idle timeout is implemented as 1 second recv timeout.
+  * Print start and end time in status line.
+  * Print frames containng IP fragments in status lines.
+  * Timeout -t 0 disables timeout and runs forever.
 
 1.05 2022-10-04
-    - With option -m udpbench uses system calls sendmmsg(2) and
-      recvmmsg(2) instead of send(2) and recv(2).
-    - Add tests and documentation for mmsg feature.
-    - Improve recv idle time logic and document it in diagnostics.
-    - Document recv interrupted system call in diagnostics.
+  * With option -m udpbench uses system calls sendmmsg(2) and
+    recvmmsg(2) instead of send(2) and recv(2).
+  * Add tests and documentation for mmsg feature.
+  * Improve recv idle time logic and document it in diagnostics.
+  * Document recv interrupted system call in diagnostics.
 
 1.04 2022-08-16
-    - Send hop-by-hop router alert IPv6 extension header with -H.
-    - Divert mode is only allowed for receiving.
-      Warning: Option -D for non remote send generates error.
-    - Sending packets does not abort with EINTR anymore.
+  * Send hop-by-hop router alert IPv6 extension header with -H.
+  * Divert mode is only allowed for receiving.
+    Warning: Option -D for non remote send generates error.
+  * Sending packets does not abort with EINTR anymore.
 
 1.03 2022-08-10
-    - Portable GNU makefile for Debian and Ubuntu.
-    - Fix calculation of frame length for full size IP packet.
-    - Delay sender with -B bitrate or -P packetrate.
-      Warning: -d delaypacket has been renamed.
-    - Print length of IP packets and Ether frames in status line.
-      Warning: Format of status line has changed.
+  * Portable GNU makefile for Debian and Ubuntu.
+  * Fix calculation of frame length for full size IP packet.
+  * Delay sender with -B bitrate or -P packetrate.
+    Warning: -d delaypacket has been renamed.
+  * Print length of IP packets and Ether frames in status line.
+    Warning: Format of status line has changed.
 
 1.02 2022-08-01
-    - Option -D receives udp packets from divert raw socket.
-    - Add minimal test on localhost.
-    - Set progname to show if error is from send or recv process.
-    - Start ssh with -nT to avoid stopped background process.
+  * Option -D receives udp packets from divert raw socket.
+  * Add minimal test on localhost.
+  * Set progname to show if error is from send or recv process.
+  * Start ssh with -nT to avoid stopped background process.
 
 1.01 2022-07-29
-    - Write man page udpbench(1).
+  * Write man page udpbench(1).
 
 1.00 2022-07-28
-    - Initial public release.
+  * Initial public release.
