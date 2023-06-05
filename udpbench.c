@@ -265,10 +265,6 @@ main(int argc, char *argv[])
 		if (timeout > 0)
 			alarm(timeout);
 		udp_send(udppayload, udplength, packetrate);
-		if (remotessh != NULL && !divert) {
-			free(hostname);
-			free(service);
-		}
 	} else {
 		const char *localhost, *localserv;
 		char localaddr[NI_MAXHOST], localport[NI_MAXSERV];
