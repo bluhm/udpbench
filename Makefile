@@ -4,10 +4,11 @@ BINDIR?=	/usr/local/bin
 MANDIR?=        /usr/local/man/man
 
 VERSION=	1.06
-CLEANFILES=	udpbench-${VERSION}.tar.gz
+CLEANFILES=	udpbench-${VERSION}.tar.gz*
 
 .PHONY: dist udpbench-${VERSION}.tar.gz
 dist: udpbench-${VERSION}.tar.gz
+	gpg --armor --detach-sign udpbench-${VERSION}.tar.gz
 	@echo ${.OBJDIR}/udpbench-${VERSION}.tar.gz
 
 udpbench-${VERSION}.tar.gz:
