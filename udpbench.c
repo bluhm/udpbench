@@ -932,7 +932,7 @@ udp2etherlength(unsigned long payload, int af, int vlan)
 pid_t
 ssh_bind(FILE **ssh_stream, const char *host, const char *serv)
 {
-	char *argv[18];
+	char *argv[20];
 	size_t i = 0;
 	pid_t ssh_pid;
 
@@ -949,6 +949,9 @@ ssh_bind(FILE **ssh_stream, const char *host, const char *serv)
 	argv[i++] = "-m";
 	if (asprintf(&argv[i++], "%d", mmsglen) == -1)
 		err(1, "asprintf mmsg length");
+	argv[i++] = "-N";
+	if (asprintf(&argv[i++], "%d", repeat) == -1)
+		err(1, "asprintf repeat");
 	argv[i++] = "-p";
 	argv[i++] = (char *)serv;
 	argv[i++] = "-t";
@@ -967,14 +970,15 @@ ssh_bind(FILE **ssh_stream, const char *host, const char *serv)
 	free(argv[5]);
 	free(argv[7]);
 	free(argv[9]);
-	free(argv[13]);
+	free(argv[11]);
+	free(argv[15]);
 	return ssh_pid;
 }
 
 pid_t
 ssh_connect(FILE **ssh_stream, const char *host, const char *serv)
 {
-	char *argv[22];
+	char *argv[24];
 	size_t i = 0;
 	pid_t ssh_pid;
 
@@ -994,6 +998,9 @@ ssh_connect(FILE **ssh_stream, const char *host, const char *serv)
 	argv[i++] = "-m";
 	if (asprintf(&argv[i++], "%d", mmsglen) == -1)
 		err(1, "asprintf mmsg length");
+	argv[i++] = "-N";
+	if (asprintf(&argv[i++], "%d", repeat) == -1)
+		err(1, "asprintf repeat");
 	argv[i++] = "-P";
 	if (asprintf(&argv[i++], "%ld", packetrate) == -1)
 		err(1, "asprintf packet rate");
@@ -1017,7 +1024,8 @@ ssh_connect(FILE **ssh_stream, const char *host, const char *serv)
 	free(argv[9]);
 	free(argv[11]);
 	free(argv[13]);
-	free(argv[17]);
+	free(argv[15]);
+	free(argv[19]);
 	return ssh_pid;
 }
 
