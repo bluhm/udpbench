@@ -1128,24 +1128,27 @@ ssh_getpeername(FILE *ssh_stream, char *addr, char *port)
 void
 ssh_wait(pid_t ssh_pid, FILE *ssh_stream)
 {
-	char *line;
-	size_t n;
-	ssize_t len;
-	int status;
+	int status, n;
 
-	line = NULL;
-	n = 0;
-	len = getline(&line, &n, ssh_stream);
-	if (len < 0) {
-		if (ferror(ssh_stream))
-			err(1, "getline status");
-		else
-			errx(1, "getline status empty");
+	for (n = repeat > 0 ? repeat : 1; n > 0; n--) {
+		char *line;
+		size_t size;
+		ssize_t len;
+
+		line = NULL;
+		size = 0;
+		len = getline(&line, &size, ssh_stream);
+		if (len < 0) {
+			if (ferror(ssh_stream))
+				err(1, "getline status");
+			else
+				errx(1, "getline status empty");
+		}
+		if (len > 0 && line[len-1] == '\n')
+			line[len-1] = '\0';
+		printf("%s\n", line);
+		free(line);
 	}
-	if (len > 0 && line[len-1] == '\n')
-		line[len-1] = '\0';
-	printf("%s\n", line);
-	free(line);
 	if (fclose(ssh_stream) == EOF)
 		err(1, "fclose");
 
