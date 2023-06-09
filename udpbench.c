@@ -413,8 +413,10 @@ udp_socket_fork(int *sock, pid_t ssh_pid, FILE *ssh_stream,
 		}
 		case 0:
 			/* child */
+#ifdef __OpenBSD__
 			if (pledge("stdio dns inet", NULL) == -1)
 				err(1, "pledge");
+#endif
 			n = 0;
 			break;
 		}
