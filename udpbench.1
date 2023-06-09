@@ -28,6 +28,7 @@
 .Op Fl b Ar bufsize
 .Op Fl l Ar length
 .Op Fl m Ar mmsglen
+.Op Fl N Ar repeat
 .Op Fl P Ar packetrate
 .Op Fl p Ar port
 .Op Fl R Ar remoteprog
@@ -100,6 +101,10 @@ and
 This can be explicity enforced by setting
 .Ar mmsglen
 to 0.
+.It Fl N Ar repeat
+Fork multiple processes to send or receive in parallel.
+For each process the IP address is incremented by one to get load
+balancing.
 .It Fl P Ar packetrate
 The value specifies the number of packets to send within a second.
 This adds a small delay between
