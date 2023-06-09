@@ -357,8 +357,13 @@ udp_socket_fork(int *sock, pid_t ssh_pid, FILE *ssh_stream,
     int(*getname)(int, struct sockaddr *, socklen_t *),
     int(*setname)(int, const struct sockaddr *, socklen_t))
 {
-	char localaddr[NI_MAXHOST], localport[NI_MAXSERV];
+	struct sockaddr_storage ss;
+	socklen_t sslen;
 	int n;
+
+	sslen = sizeof(ss);
+	if (getname(*sock, (struct sockaddr *)&ss, &sslen) == -1)
+		err(1, "getname");
 
 	for (n = repeat; n > 0; n--) {
 		switch (fork()) {
@@ -366,13 +371,8 @@ udp_socket_fork(int *sock, pid_t ssh_pid, FILE *ssh_stream,
 			err(1, "fork");
 		default: {
 			/* parent */
-			struct sockaddr_storage ss;
-			socklen_t sslen;
+			char localaddr[NI_MAXHOST], localport[NI_MAXSERV];
 
-			sslen = sizeof(ss);
-			if (getname(*sock, (struct sockaddr *)&ss, &sslen)
-			    == -1)
-				err(1, "getpeername %d", n);
 			if (close(*sock) == -1)
 				err(1, "close %d", n);
 			*sock = -1;
@@ -407,8 +407,8 @@ udp_socket_fork(int *sock, pid_t ssh_pid, FILE *ssh_stream,
 			*sock = socket(ss.ss_family, SOCK_DGRAM, IPPROTO_UDP);
 			if (*sock == -1)
 				err(1, "socket %d", n);
-			if (connect(*sock, (struct sockaddr *)&ss, sslen) == -1)
-				err(1, "connect %d", n);
+			if (setname(*sock, (struct sockaddr *)&ss, sslen) == -1)
+				err(1, "setname %d", n);
 			udp_getsockname(*sock, localaddr, localport);
 		}
 		case 0:
