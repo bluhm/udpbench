@@ -22,12 +22,12 @@ udpbench-${VERSION}.tar.gz:
 
 CLEANFILES+=	out
 
-.PHONY: test test-localhost test-localhost6
-test: test-localhost test-localhost6
+.PHONY: test test-localhost test-localhost6 test-repeat
+test: test-localhost test-localhost6 test-repeat
 
 test-localhost:
 	@echo '\n==== $@ ===='
-	./udpbench -p 0 -t3 recv 127.0.0.1 >out & \
+	./udpbench -p0 -t3 recv 127.0.0.1 >out & \
 	    sleep 1; \
 	    port=`awk '/^sockname:/{print $$3}' out`; \
 	    ./udpbench -p $$port -t1 send 127.0.0.1 || exit 1; \
@@ -36,10 +36,19 @@ test-localhost:
 
 test-localhost6:
 	@echo '\n==== $@ ===='
-	./udpbench -p 0 -t3 recv ::1 >out & \
+	./udpbench -p0 -t3 recv ::1 >out & \
 	    sleep 1; \
 	    port=`awk '/^sockname:/{print $$3}' out`; \
 	    ./udpbench -p $$port -t1 send ::1 || exit 1; \
+	    wait $$!
+	grep '^recv:' out
+
+test-repeat:
+	@echo '\n==== $@ ===='
+	./udpbench -N1 -p0 -t3 recv 127.0.0.1 >out & \
+	    sleep 1; \
+	    port=`awk '/^sockname:/{print $$3}' out`; \
+	    ./udpbench -N1 -p $$port -t1 send 127.0.0.1 || exit 1; \
 	    wait $$!
 	grep '^recv:' out
 
