@@ -49,6 +49,9 @@ long packetrate;
 
 void	udp_connect_send(void);
 void	udp_bind_receive(void);
+void	udp_socket_fork(int *, pid_t, FILE *,
+	    int(*)(int, struct sockaddr *, socklen_t *),
+	    int(*)(int, const struct sockaddr *, socklen_t));
 void	alarm_handler(int);
 int	udp_bind(int *, const char *, const char *);
 int	udp_connect(int *, const char *, const char *);
@@ -240,7 +243,6 @@ udp_connect_send(void)
 	int udp_socket, udp_family = AF_UNSPEC;
 	FILE *ssh_stream;
 	pid_t ssh_pid;
-	int n;
 
 	remotehost = hostname;
 	remoteserv = service;
@@ -266,68 +268,12 @@ udp_connect_send(void)
 
 	udp_socket = udp_connect(&udp_family, remotehost, remoteserv);
 	udp_getsockname(udp_socket, localaddr, localport);
-
-	for (n = repeat; n > 0; n--) {
-		switch (fork()) {
-		case -1:
-			err(1, "fork");
-		default: {
-			/* parent */
-			struct sockaddr_storage ss;
-			socklen_t sslen;
-
-			if (n == 1) {
-				if (remotessh != NULL)
-					ssh_wait(ssh_pid, ssh_stream);
-				for (n = repeat;  n > 0; n--) {
-					int status;
-
-					if (wait(&status) == -1)
-						err(1, "wait");
-					if (status != 0)
-						errx(1, "status: %d", status);
-				}
-				return;
-			}
-
-			sslen = sizeof(ss);
-			if (getpeername(udp_socket, (struct sockaddr *)&ss,
-			    &sslen) == -1)
-				err(1, "getpeername %d", n);
-			switch (ss.ss_family) {
-				struct sockaddr_in *sin;
-				struct sockaddr_in6 *sin6;
-
-			case AF_INET:
-				sin = (struct sockaddr_in *)&ss;
-				((uint8_t *)&sin->sin_addr.s_addr)[3]++;
-				break;
-			case AF_INET6:
-				sin6 = (struct sockaddr_in6 *)&ss;
-				((uint8_t *)&sin6->sin6_addr.s6_addr)[15]++;
-				break;
-			}
-			if (close(udp_socket) == -1)
-				err(1, "close %d", n);
-			udp_socket = socket(udp_family, SOCK_DGRAM,
-			    IPPROTO_UDP);
-			if (udp_socket == -1)
-				err(1, "socket %d", n);
-			if (connect(udp_socket, (struct sockaddr *)&ss,
-			    sslen) == -1)
-				err(1, "connect %d", n);
-			udp_getsockname(udp_socket, localaddr, localport);
-		}
-		case 0:
-			/* child */
-			if (pledge("stdio dns inet", NULL) == -1)
-				err(1, "pledge");
-			remotessh = NULL;
-			n = 0;
-			break;
-		}
+	if (repeat > 0) {
+		udp_socket_fork(&udp_socket, ssh_pid, ssh_stream,
+		    getpeername, connect);
+		if (udp_socket == -1)
+			return;
 	}
-
 	if (buffersize)
 		udp_setbuffersize(udp_socket, SO_SNDBUF, buffersize);
 	if (hopbyhop) {
@@ -354,7 +300,7 @@ udp_connect_send(void)
 	udp_send(udp_socket, udp_family, sendrate);
 	if (close(udp_socket) == -1)
 		err(1, "close");
-	if (remotessh != NULL)
+	if (repeat == 0 && remotessh != NULL)
 		ssh_wait(ssh_pid, ssh_stream);
 }
 
@@ -376,8 +322,6 @@ udp_bind_receive(void)
 		localhost = localaddr;
 		localserv = localport;
 	}
-	if (buffersize)
-		udp_setbuffersize(udp_socket, SO_RCVBUF, buffersize);
 	if (remotessh != NULL) {
 		ssh_pid = ssh_connect(&ssh_stream, localhost, localserv);
 #ifdef __OpenBSD__
@@ -391,13 +335,90 @@ udp_bind_receive(void)
 #endif
 		ssh_getpeername(ssh_stream, remoteaddr, remoteport);
 	}
+	if (repeat > 0) {
+		udp_socket_fork(&udp_socket, ssh_pid, ssh_stream,
+		    getsockname, bind);
+		if (udp_socket == -1)
+			return;
+	}
+	if (buffersize)
+		udp_setbuffersize(udp_socket, SO_RCVBUF, buffersize);
 	if (timeout > 0)
 		alarm(timeout + 4);
 	udp_receive(udp_socket, udp_family);
 	if (close(udp_socket) == -1)
 		err(1, "close");
-	if (remotessh != NULL)
+	if (repeat == 0 && remotessh != NULL)
 		ssh_wait(ssh_pid, ssh_stream);
+}
+
+void
+udp_socket_fork(int *sock, pid_t ssh_pid, FILE *ssh_stream,
+    int(*getname)(int, struct sockaddr *, socklen_t *),
+    int(*setname)(int, const struct sockaddr *, socklen_t))
+{
+	char localaddr[NI_MAXHOST], localport[NI_MAXSERV];
+	int n;
+
+	for (n = repeat; n > 0; n--) {
+		switch (fork()) {
+		case -1:
+			err(1, "fork");
+		default: {
+			/* parent */
+			struct sockaddr_storage ss;
+			socklen_t sslen;
+
+			sslen = sizeof(ss);
+			if (getname(*sock, (struct sockaddr *)&ss, &sslen)
+			    == -1)
+				err(1, "getpeername %d", n);
+			if (close(*sock) == -1)
+				err(1, "close %d", n);
+			*sock = -1;
+
+			if (n == 1) {
+				if (remotessh != NULL)
+					ssh_wait(ssh_pid, ssh_stream);
+				for (n = repeat;  n > 0; n--) {
+					int status;
+
+					if (wait(&status) == -1)
+						err(1, "wait");
+					if (status != 0)
+						errx(1, "status: %d", status);
+				}
+				return;
+			}
+
+			switch (ss.ss_family) {
+				struct sockaddr_in *sin;
+				struct sockaddr_in6 *sin6;
+
+			case AF_INET:
+				sin = (struct sockaddr_in *)&ss;
+				((uint8_t *)&sin->sin_addr.s_addr)[3]++;
+				break;
+			case AF_INET6:
+				sin6 = (struct sockaddr_in6 *)&ss;
+				((uint8_t *)&sin6->sin6_addr.s6_addr)[15]++;
+				break;
+			}
+			*sock = socket(ss.ss_family, SOCK_DGRAM, IPPROTO_UDP);
+			if (*sock == -1)
+				err(1, "socket %d", n);
+			if (connect(*sock, (struct sockaddr *)&ss, sslen) == -1)
+				err(1, "connect %d", n);
+			udp_getsockname(*sock, localaddr, localport);
+		}
+		case 0:
+			/* child */
+			if (pledge("stdio dns inet", NULL) == -1)
+				err(1, "pledge");
+			n = 0;
+			break;
+		}
+	}
 }
 
 void
