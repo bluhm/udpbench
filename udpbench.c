@@ -49,7 +49,7 @@ long packetrate;
 
 void	udp_connect_send(void);
 void	udp_bind_receive(void);
-void	udp_socket_fork(int *, pid_t, FILE *,
+void	udp_socket_fork(int *,
 	    int(*)(int, struct sockaddr *, socklen_t *),
 	    int(*)(int, const struct sockaddr *, socklen_t));
 void	alarm_handler(int);
@@ -265,14 +265,15 @@ udp_connect_send(void)
 			remoteserv = remoteport;
 		}
 	}
-
 	udp_socket = udp_connect(&udp_family, remotehost, remoteserv);
 	udp_getsockname(udp_socket, localaddr, localport);
 	if (repeat > 0) {
-		udp_socket_fork(&udp_socket, ssh_pid, ssh_stream,
-		    getpeername, connect);
-		if (udp_socket == -1)
+		udp_socket_fork(&udp_socket, getpeername, connect);
+		if (udp_socket == -1) {
+			if (remotessh != NULL)
+				ssh_wait(ssh_pid, ssh_stream);
 			return;
+		}
 	}
 	if (buffersize)
 		udp_setbuffersize(udp_socket, SO_SNDBUF, buffersize);
@@ -322,7 +323,10 @@ udp_bind_receive(void)
 		localhost = localaddr;
 		localserv = localport;
 	}
-	if (remotessh != NULL) {
+	if (repeat > 0) {
+		udp_socket_fork(&udp_socket, getsockname, bind);
+	}
+	if ((repeat == 0 || udp_socket == -1) && remotessh != NULL) {
 		ssh_pid = ssh_connect(&ssh_stream, localhost, localserv);
 #ifdef __OpenBSD__
 		if (repeat) {
@@ -336,10 +340,11 @@ udp_bind_receive(void)
 		ssh_getpeername(ssh_stream, remoteaddr, remoteport);
 	}
 	if (repeat > 0) {
-		udp_socket_fork(&udp_socket, ssh_pid, ssh_stream,
-		    getsockname, bind);
-		if (udp_socket == -1)
+		if (udp_socket == -1) {
+			if (remotessh != NULL)
+				ssh_wait(ssh_pid, ssh_stream);
 			return;
+		}
 	}
 	if (buffersize)
 		udp_setbuffersize(udp_socket, SO_RCVBUF, buffersize);
@@ -353,7 +358,7 @@ udp_bind_receive(void)
 }
 
 void
-udp_socket_fork(int *sock, pid_t ssh_pid, FILE *ssh_stream,
+udp_socket_fork(int *sock,
     int(*getname)(int, struct sockaddr *, socklen_t *),
     int(*setname)(int, const struct sockaddr *, socklen_t))
 {
@@ -378,8 +383,6 @@ udp_socket_fork(int *sock, pid_t ssh_pid, FILE *ssh_stream,
 			*sock = -1;
 
 			if (n == 1) {
-				if (remotessh != NULL)
-					ssh_wait(ssh_pid, ssh_stream);
 				for (n = repeat;  n > 0; n--) {
 					int status;
 
