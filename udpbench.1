@@ -93,6 +93,13 @@ Use
 and
 .Xr sendmmsg 2
 and set the amount of simultaneously handled messages.
+Default is to use
+.Xr recv 2
+and
+.Xr send 2 .
+This can be explicity enforced by setting
+.Ar mmsglen
+to 0.
 .It Fl P Ar packetrate
 The value specifies the number of packets to send within a second.
 This adds a small delay between

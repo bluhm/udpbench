@@ -134,7 +134,7 @@ main(int argc, char *argv[])
 				    errstr, optarg);
 			break;
 		case 'm':
-			mmsglen = strtonum(optarg, 1, 1024, &errstr);
+			mmsglen = strtonum(optarg, 0, 1024, &errstr);
 			if (errstr != NULL)
 				errx(1, "msghdr size is %s: %s",
 				    errstr, optarg);
