@@ -835,6 +835,9 @@ ssh_bind(FILE **ssh_stream, const char *host, const char *serv)
 	argv[i++] = "-l";
 	if (asprintf(&argv[i++], "%zu", udplength) == -1)
 		err(1, "asprintf udp length");
+	argv[i++] = "-m";
+	if (asprintf(&argv[i++], "%d", mmsglen) == -1)
+		err(1, "asprintf mmsg length");
 	argv[i++] = "-p";
 	argv[i++] = (char *)serv;
 	argv[i++] = "-t";
@@ -842,11 +845,6 @@ ssh_bind(FILE **ssh_stream, const char *host, const char *serv)
 		err(1, "asprintf timeout");
 	if (divert)
 		argv[i++] = "-D";
-	if (mmsglen) {
-		argv[i++] = "-m";
-		if (asprintf(&argv[i++], "%d", mmsglen) == -1)
-			err(1, "asprintf mmsglen");
-	}
 	argv[i++] = "recv";
 	argv[i++] = (char *)host;
 	argv[i++] = NULL;
@@ -857,14 +855,15 @@ ssh_bind(FILE **ssh_stream, const char *host, const char *serv)
 
 	free(argv[5]);
 	free(argv[7]);
-	free(argv[11]);
+	free(argv[9]);
+	free(argv[13]);
 	return ssh_pid;
 }
 
 pid_t
 ssh_connect(FILE **ssh_stream, const char *host, const char *serv)
 {
-	char *argv[18];
+	char *argv[22];
 	size_t i = 0;
 	pid_t ssh_pid;
 
@@ -872,12 +871,21 @@ ssh_connect(FILE **ssh_stream, const char *host, const char *serv)
 	argv[i++] = "-nT";
 	argv[i++] = (char *)remotessh;
 	argv[i++] = (char *)progname;
+	argv[i++] = "-B";
+	if (asprintf(&argv[i++], "%lld", bitrate) == -1)
+		err(1, "asprintf bit rate");
 	argv[i++] = "-b";
 	if (asprintf(&argv[i++], "%d", buffersize) == -1)
 		err(1, "asprintf buffer size");
 	argv[i++] = "-l";
 	if (asprintf(&argv[i++], "%zu", udplength) == -1)
 		err(1, "asprintf udp length");
+	argv[i++] = "-m";
+	if (asprintf(&argv[i++], "%d", mmsglen) == -1)
+		err(1, "asprintf mmsg length");
+	argv[i++] = "-P";
+	if (asprintf(&argv[i++], "%ld", packetrate) == -1)
+		err(1, "asprintf packet rate");
 	argv[i++] = "-p";
 	argv[i++] = (char *)serv;
 	argv[i++] = "-t";
@@ -885,11 +893,6 @@ ssh_connect(FILE **ssh_stream, const char *host, const char *serv)
 		err(1, "asprintf timeout");
 	if (hopbyhop)
 		argv[i++] = "-H";
-	if (mmsglen) {
-		argv[i++] = "-m";
-		if (asprintf(&argv[i++], "%d", mmsglen) == -1)
-			err(1, "asprintf mmsglen");
-	}
 	argv[i++] = "send";
 	argv[i++] = (char *)host;
 	argv[i++] = NULL;
@@ -900,7 +903,10 @@ ssh_connect(FILE **ssh_stream, const char *host, const char *serv)
 
 	free(argv[5]);
 	free(argv[7]);
+	free(argv[9]);
 	free(argv[11]);
+	free(argv[13]);
+	free(argv[17]);
 	return ssh_pid;
 }
 
