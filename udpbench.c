@@ -39,7 +39,7 @@
 sig_atomic_t alarm_signaled;
 
 const char *progname, *hostname, *service = "12345", *remotessh;
-int divert, hopbyhop;
+int sendmode, divert, hopbyhop;
 long long bitrate;
 int buffersize, mmsglen, repeat;
 int timeout = 1;
@@ -105,7 +105,7 @@ main(int argc, char *argv[])
 {
 	struct sigaction act;
 	const char *errstr;
-	int ch, sendmode;
+	int ch;
 
 	progname = argv[0];
 
@@ -409,6 +409,13 @@ udp_socket_fork(int *udp_socket,
 			if (pledge("stdio dns inet", NULL) == -1)
 				err(1, "pledge");
 #endif
+			{
+				static char name[32];
+
+				snprintf(name, sizeof(name), "udpbench %s %d",
+				    sendmode ? "send" : "recv", repeat - n);
+				setprogname(name);
+			}
 			n = 0;
 			break;
 		}
