@@ -606,7 +606,7 @@ void
 udp_receive(int udp_socket, int udp_family)
 {
 	struct timeval begin, idle, end, timeo;
-	unsigned long syscall, packet;
+	unsigned long syscall, packet, bored;
 	unsigned long headerlen, paylen;
 	struct mmsghdr *mmsg;
 	char *payload;
@@ -651,14 +651,15 @@ udp_receive(int udp_socket, int udp_family)
 		err(1, "gettimeofday begin");
 	timerclear(&idle);
 
-	timeo.tv_sec = timeout_idle;
-	timeo.tv_usec = 0;
+	timeo.tv_sec = 0;
+	timeo.tv_usec = 100000;
 	len = sizeof(timeo);
 	if (setsockopt(udp_socket, SOL_SOCKET, SO_RCVTIMEO, &timeo, len) == -1)
 		err(1, "setsockopt recv timeout");
 
 	syscall = 1;
 	packet = 1;
+	bored = 0;
 	while (!alarm_signaled) {
 		syscall++;
 		if (mmsglen)
@@ -667,16 +668,26 @@ udp_receive(int udp_socket, int udp_family)
 			rcvlen = recv(udp_socket, payload, udplen + 1, 0);
 		if (pkts == -1 || rcvlen == -1) {
 			if (errno == EWOULDBLOCK) {
-				if (gettimeofday(&idle, NULL) == -1)
-					err(1, "gettimeofday idle");
-				/* packet was seen before timeout */
-				timersub(&idle, &timeo, &idle);
-				break;
+				bored++;
+				if (bored == 1) {
+					if (gettimeofday(&idle, NULL) == -1)
+						err(1, "gettimeofday idle");
+					/* packet was seen before timeout */
+					timersub(&idle, &timeo, &idle);
+				}
+				if (bored * timeo.tv_usec >
+				    1000000L * timeout_idle ) {
+					/* more than a second idle time */
+					break;
+				}
+				continue;
 			}
 			if (errno == EINTR)
 				continue;
 			err(1, "recv");
 		}
+		timerclear(&idle);
+		bored = 0;
 		packet += pkts;
 	}
 
@@ -692,7 +703,7 @@ udp_receive(int udp_socket, int udp_family)
 		timersub(&tmp, &idle, &idle);
 	}
 	print_status("recv", syscall, packet, paylen, udp_family, &begin, &end);
-	if (idle.tv_sec < 1)
+	if (idle.tv_sec < timeout_idle)
 		errx(1, "not enough idle time: %lld.%06ld",
 		    (long long)idle.tv_sec, idle.tv_usec);
 	if (mmsglen)
