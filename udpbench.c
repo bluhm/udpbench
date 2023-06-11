@@ -39,7 +39,7 @@
 sig_atomic_t alarm_signaled;
 
 const char *progname, *hostname, *service = "12345", *remotessh;
-int sendmode, divert, hopbyhop;
+int sendmode, delay, divert, hopbyhop;
 long long bitrate;
 int buffersize, mmsglen, repeat;
 int timeout = 1;
@@ -80,11 +80,13 @@ static void
 usage(void)
 {
 	fprintf(stderr, "usage: udpbench [-DH] [-B bitrate] [-b bufsize] "
-	    "[-l length] [-m mmsglen] [-N repeat] [-P packetrate] [-p port] "
-	    "[-R remoteprog] [-r remotessh] [-t timeout] send|recv [hostname]\n"
+	    "[-d delay] [-l length] [-m mmsglen] [-N repeat] [-P packetrate] "
+	    "[-p port] [-R remoteprog] [-r remotessh] [-t timeout] "
+	    "send|recv [hostname]\n"
 	    "    -B bitrate     bits per seconds send rate\n"
 	    "    -b bufsize     set size of send or receive buffer\n"
 	    "    -D             use pf divert packet for receive\n"
+	    "    -d delay       wait for setup before sending\n"
 	    "    -H             send hop-by-hop router alert option\n"
 	    "    -l length      set length of udp payload\n"
 	    "    -m mmsglen     number of mmsghdr for sendmmsg or recvmmsg\n"
@@ -112,7 +114,7 @@ main(int argc, char *argv[])
 	if (setvbuf(stdout, NULL, _IOLBF, 0) != 0)
 		err(1, "setvbuf");
 
-	while ((ch = getopt(argc, argv, "B:b:DHl:m:N:P:p:R:r:t:")) != -1) {
+	while ((ch = getopt(argc, argv, "B:b:Dd:Hl:m:N:P:p:R:r:t:")) != -1) {
 		switch (ch) {
 		case 'B':
 			bitrate = strtonum(optarg, 0, LLONG_MAX, &errstr);
@@ -131,6 +133,12 @@ main(int argc, char *argv[])
 			break;
 		case 'H':
 			hopbyhop = 1;
+			break;
+		case 'd':
+			delay = strtonum(optarg, 0, INT_MAX, &errstr);
+			if (errstr != NULL)
+				errx(1, "delay is %s: %s",
+				    errstr, optarg);
 			break;
 		case 'l':
 			udplength = strtonum(optarg, 0, IP_MAXPACKET, &errstr);
@@ -295,6 +303,8 @@ udp_connect_send(void)
 			    bitrate, etherlen);
 	} else
 		sendrate = packetrate;
+	if (delay)
+		sleep(delay);
 	if (timeout > 0)
 		alarm(timeout);
 	udp_send(udp_socket, udp_family, sendrate);
@@ -346,7 +356,7 @@ udp_bind_receive(void)
 	if (buffersize)
 		udp_setbuffersize(udp_socket, SO_RCVBUF, buffersize);
 	if (timeout > 0)
-		alarm(timeout + 4);
+		alarm(timeout + delay + 2);
 	udp_receive(udp_socket, udp_family);
 	if (close(udp_socket) == -1)
 		err(1, "close");
@@ -711,7 +721,7 @@ udp_send(int udp_socket, int udp_family, unsigned long sendrate)
 
 			if (!timerisset(&end)) {
 				if (gettimeofday(&end, NULL) == -1)
-					err(1, "gettimeofday delay");
+					err(1, "gettimeofday rate before");
 			}
 			timersub(&end, &begin, &duration);
 			if (!timerisset(&duration))
@@ -725,7 +735,7 @@ udp_send(int udp_socket, int udp_family, unsigned long sendrate)
 			if (wait.tv_sec > 0 || wait.tv_nsec > 0) {
 				nanosleep(&wait, NULL);
 				if (gettimeofday(&end, NULL) == -1)
-					err(1, "gettimeofday delay");
+					err(1, "gettimeofday rate after");
 			}
 		}
 	}
@@ -771,7 +781,7 @@ udp_receive(int udp_socket, int udp_family)
 	/* wait for the first packet to start timing */
 	rcvlen = recv(udp_socket, payload, udplen + 1, 0);
 	if (rcvlen == -1)
-		err(1, "recv 1");
+		err(1, "recv first");
 	paylen = rcvlen;
 	if (paylen < udplen)
 		warnx("receive packet truncated %zd", rcvlen);
@@ -969,7 +979,7 @@ udp2etherlength(unsigned long payload, int af, int vlan)
 pid_t
 ssh_bind(FILE **ssh_stream, const char *host, const char *serv)
 {
-	char *argv[20];
+	char *argv[22];
 	size_t i = 0;
 	pid_t ssh_pid;
 
@@ -980,6 +990,9 @@ ssh_bind(FILE **ssh_stream, const char *host, const char *serv)
 	argv[i++] = "-b";
 	if (asprintf(&argv[i++], "%d", buffersize) == -1)
 		err(1, "asprintf buffer size");
+	argv[i++] = "-d";
+	if (asprintf(&argv[i++], "%d", delay) == -1)
+		err(1, "asprintf dalay");
 	argv[i++] = "-l";
 	if (asprintf(&argv[i++], "%zu", udplength) == -1)
 		err(1, "asprintf udp length");
@@ -1008,14 +1021,15 @@ ssh_bind(FILE **ssh_stream, const char *host, const char *serv)
 	free(argv[7]);
 	free(argv[9]);
 	free(argv[11]);
-	free(argv[15]);
+	free(argv[13]);
+	free(argv[17]);
 	return ssh_pid;
 }
 
 pid_t
 ssh_connect(FILE **ssh_stream, const char *host, const char *serv)
 {
-	char *argv[24];
+	char *argv[28];
 	size_t i = 0;
 	pid_t ssh_pid;
 
@@ -1029,6 +1043,9 @@ ssh_connect(FILE **ssh_stream, const char *host, const char *serv)
 	argv[i++] = "-b";
 	if (asprintf(&argv[i++], "%d", buffersize) == -1)
 		err(1, "asprintf buffer size");
+	argv[i++] = "-d";
+	if (asprintf(&argv[i++], "%d", delay) == -1)
+		err(1, "asprintf dalay");
 	argv[i++] = "-l";
 	if (asprintf(&argv[i++], "%zu", udplength) == -1)
 		err(1, "asprintf udp length");
@@ -1062,7 +1079,8 @@ ssh_connect(FILE **ssh_stream, const char *host, const char *serv)
 	free(argv[11]);
 	free(argv[13]);
 	free(argv[15]);
-	free(argv[19]);
+	free(argv[17]);
+	free(argv[21]);
 	return ssh_pid;
 }
 

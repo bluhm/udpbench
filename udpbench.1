@@ -26,6 +26,7 @@
 .Op Fl DH
 .Op Fl B Ar bitrate
 .Op Fl b Ar bufsize
+.Op Fl d Ar delay
 .Op Fl l Ar length
 .Op Fl m Ar mmsglen
 .Op Fl N Ar repeat
@@ -82,6 +83,9 @@ mode this option has no effect on local sending.
 With dynamic
 .Ic ssh
 the option is passed to the remote process.
+.It Fl d Ar delay
+Sleep some seconds before sending packets.
+This is useful to wait for setup of multiple processes via ssh.
 .It Fl H
 Use IPv6 hop-by-hop option by adding a router alert when sending.
 .It Fl l Ar length
