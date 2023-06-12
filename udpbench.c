@@ -212,12 +212,6 @@ main(int argc, char *argv[])
 
 	if (bitrate && packetrate)
 		errx(1, "either bitrate or packetrate may be given");
-	if (!sendmode && remotessh == NULL && (bitrate || packetrate))
-		errx(1, "bitrate or packetrate only allowed for send");
-	if (sendmode && remotessh == NULL && divert)
-		errx(1, "divert only allowed for receive");
-	if (!sendmode && remotessh == NULL && hopbyhop)
-		errx(1, "hopbyhop only allowed for send");
 
 #ifdef __OpenBSD__
 	if (sendmode && hopbyhop) {
