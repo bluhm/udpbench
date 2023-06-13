@@ -1,5 +1,7 @@
 Revision history for udpbench udp network benchmarking tool.
 
+1.08
+
 1.07 2023-06-13
   * All options are allowed on command line for both sides.
     This is needed as ssh udpbench sets all options now.
