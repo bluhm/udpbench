@@ -1,6 +1,17 @@
 Revision history for udpbench udp network benchmarking tool.
 
-1.07
+1.07 2023-06-13
+  * All options are allowed on command line for both sides.
+    This is needed as ssh udpbench sets all options now.
+  * Implement -d idle to set idle timeout via command line.
+    Global receive timeout is adjusted by delay and idle.
+  * Implement -d delay to sleep before sending.
+  * Implement -N repeat to fork multiple udpbench processes.
+  * Revert idle timeout calculation.  Check idle time every tenth
+    of a second to make it more reliable.
+  * Call remote ssh udpbench with full set ot options.
+  * Option -m mmsglen value 0 explicitly turns multiple messages
+    off.
 
 1.06 2023-06-05
   * Create gpg signature .asc for released .tar.gz files.
