@@ -160,7 +160,7 @@ main(int argc, char *argv[])
 				    errstr, optarg);
 			break;
 		case 'N':
-			repeat = strtonum(optarg, 0, 1000, &errstr);
+			repeat = strtonum(optarg, 0, 256, &errstr);
 			if (errstr != NULL)
 				errx(1, "repeat number is %s: %s",
 				    errstr, optarg);
