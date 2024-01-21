@@ -782,6 +782,14 @@ udp_receive(int udp_socket, int udp_family)
 	if ((payload = malloc(udplen + 1)) == NULL)
 		err(1, "malloc payload");
 
+	if (delay) {
+		/* before the delay expect an empty initial packet */
+		rcvlen = recv(udp_socket, payload, udplen + 1, 0);
+		if (rcvlen == -1)
+			err(1, "recv initial");
+		if (rcvlen > 0)
+			warnx("receive initial packet not empty %zd", rcvlen);
+	}
 	/* wait for the first packet to start timing */
 	rcvlen = recv(udp_socket, payload, udplen + 1, 0);
 	if (rcvlen == -1)
