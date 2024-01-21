@@ -304,8 +304,11 @@ udp_connect_send(void)
 			    bitrate, etherlen);
 	} else
 		sendrate = packetrate;
-	if (delay)
+	if (delay) {
+		if (send(udp_socket, "", 0, 0) == -1)
+			err(1, "send initial");
 		sleep(delay);
+	}
 	if (timeout > 0)
 		alarm(timeout);
 	udp_send(udp_socket, udp_family, sendrate);
