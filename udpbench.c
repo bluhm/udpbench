@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022 Alexander Bluhm <bluhm@genua.de>
+ * Copyright (c) 2019-2024 Alexander Bluhm <bluhm@genua.de>
  * Copyright (c) 2022 Moritz Buhl <mbuhl@genua.de>
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -764,6 +764,7 @@ udp_receive(int udp_socket, int udp_family)
 	char *payload;
 	size_t udplen;
 	ssize_t rcvlen;
+	socklen_t len;
 	int pkts;
 
 	udplen = udplength;
@@ -811,15 +812,11 @@ udp_receive(int udp_socket, int udp_family)
 
 	timerclear(&final);
 	timerclear(&timeo);
-	if (idle) {
-		socklen_t len;
+	timeo.tv_usec = 100000;
+	len = sizeof(timeo);
+	if (setsockopt(udp_socket, SOL_SOCKET, SO_RCVTIMEO, &timeo, len) == -1)
+		err(1, "setsockopt recv timeout");
 
-		timeo.tv_usec = 100000;
-		len = sizeof(timeo);
-		if (setsockopt(udp_socket, SOL_SOCKET, SO_RCVTIMEO, &timeo,
-		    len) == -1)
-			err(1, "setsockopt recv timeout");
-	}
 	syscall = 1;
 	packet = 1;
 	bored = 0;
@@ -838,7 +835,7 @@ udp_receive(int udp_socket, int udp_family)
 					/* packet was seen before timeout */
 					timersub(&final, &timeo, &final);
 				}
-				if (bored * timeo.tv_usec >
+				if (idle && bored * timeo.tv_usec >
 				    1000000L * idle ) {
 					/* more than a second idle time */
 					break;
