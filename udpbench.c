@@ -45,9 +45,10 @@ long long bitrate;
 int buffersize, mmsglen, repeat;
 size_t udplength;
 long packetrate;
+char status_line[1024];
 
-void	udp_connect_send(void);
-void	udp_bind_receive(void);
+void	udp_connect_send(struct timeval *, struct timeval *);
+void	udp_bind_receive(struct timeval *, struct timeval *);
 void	udp_socket_fork(int *,
 	    int(*)(int, struct sockaddr *, socklen_t *),
 	    int(*)(int, const struct sockaddr *, socklen_t));
@@ -64,8 +65,9 @@ void	udp_receive(int, int);
 struct mmsghdr	*mmsg_alloc(int, size_t, int);
 void		 mmsg_free(struct mmsghdr *);
 
-void print_status(const char *, unsigned long, unsigned long, unsigned long,
+void status_init(const char *, unsigned long, unsigned long, unsigned long,
     int, const struct timeval *, const struct timeval *);
+void status_final(const struct timeval *, const struct timeval *);
 unsigned long udp2iplength(unsigned long, int, unsigned long *);
 unsigned long udp2etherlength(unsigned long , int, int);
 
@@ -107,6 +109,7 @@ int
 main(int argc, char *argv[])
 {
 	struct sigaction act;
+	struct timeval start, stop;
 	const char *errstr;
 	int ch;
 
@@ -236,15 +239,16 @@ main(int argc, char *argv[])
 		err(1, "sigaction");
 
 	if (sendmode)
-		udp_connect_send();
+		udp_connect_send(&start, &stop);
 	else
-		udp_bind_receive();
+		udp_bind_receive(&start, &stop);
+	status_final(&start, &stop);
 
 	return 0;
 }
 
 void
-udp_connect_send(void)
+udp_connect_send(struct timeval *start, struct timeval *stop)
 {
 	const char *remotehost, *remoteserv;
 	char localaddr[NI_MAXHOST], localport[NI_MAXSERV];
@@ -277,6 +281,8 @@ udp_connect_send(void)
 		}
 	}
 	udp_socket = udp_connect(&udp_family, remotehost, remoteserv);
+	if (gettimeofday(start, NULL) == -1)
+		err(1, "gettimeofday start");
 	udp_getsockname(udp_socket, localaddr, localport);
 	if (repeat > 0) {
 		udp_socket_fork(&udp_socket, getpeername, connect);
@@ -312,6 +318,8 @@ udp_connect_send(void)
 	if (timeout > 0)
 		alarm(timeout);
 	udp_send(udp_socket, udp_family, sendrate);
+	if (gettimeofday(stop, NULL) == -1)
+		err(1, "gettimeofday stop");
 	if (close(udp_socket) == -1)
 		err(1, "close");
 	if (repeat == 0 && remotessh != NULL)
@@ -319,7 +327,7 @@ udp_connect_send(void)
 }
 
 void
-udp_bind_receive(void)
+udp_bind_receive(struct timeval *start, struct timeval *stop)
 {
 	const char *localhost, *localserv;
 	char localaddr[NI_MAXHOST], localport[NI_MAXSERV];
@@ -330,6 +338,8 @@ udp_bind_receive(void)
 	localhost = hostname;
 	localserv = service;
 	udp_socket = udp_bind(&udp_family, localhost, localserv);
+	if (gettimeofday(start, NULL) == -1)
+		err(1, "gettimeofday start");
 	udp_getsockname(udp_socket, localaddr, localport);
 	if (!divert) {
 		localhost = localaddr;
@@ -362,6 +372,8 @@ udp_bind_receive(void)
 	if (timeout > 0)
 		alarm(timeout + delay + idle + 1);
 	udp_receive(udp_socket, udp_family);
+	if (gettimeofday(stop, NULL) == -1)
+		err(1, "gettimeofday stop");
 	if (close(udp_socket) == -1)
 		err(1, "close");
 	if (repeat == 0 && remotessh != NULL)
@@ -746,7 +758,7 @@ udp_send(int udp_socket, int udp_family, unsigned long sendrate)
 
 	if (gettimeofday(&end, NULL) == -1)
 		err(1, "gettimeofday end");
-	print_status("send", syscall, packet, udplen, udp_family, &begin, &end);
+	status_init("send", syscall, packet, udplen, udp_family, &begin, &end);
 	if (mmsglen)
 		mmsg_free(mmsg);
 	else
@@ -862,17 +874,19 @@ udp_receive(int udp_socket, int udp_family)
 		/* new final is duration without packets */
 		timersub(&tmp, &final, &final);
 	}
-	print_status("recv", syscall, packet, paylen, udp_family, &begin, &end);
-	if (idle && final.tv_sec < idle)
+	status_init("recv", syscall, packet, paylen, udp_family, &begin, &end);
+	if (idle && final.tv_sec < idle) {
+		printf("%s\n", status_line);
 		errx(1, "not enough idle time: %lld.%06ld",
 		    (long long)final.tv_sec, final.tv_usec);
+	}
 	if (mmsglen)
 		mmsg_free(mmsg);
 	free(payload);
 }
 
 void
-print_status(const char *action, unsigned long syscall, unsigned long packet,
+status_init(const char *action, unsigned long syscall, unsigned long packet,
     unsigned long paylen, int af, const struct timeval *begin,
     const struct timeval *end)
 {
@@ -885,13 +899,34 @@ print_status(const char *action, unsigned long syscall, unsigned long packet,
 	bits = (double)packet * etherlen * 8;
 	timersub(end, begin, &duration);
 	bits /= (double)duration.tv_sec + (double)duration.tv_usec / 1000000;
-	printf("%s: syscalls %lu, packets %lu, frame %lu, payload %lu, "
-	    "ip %lu, ether %lu, begin %lld.%06ld, end %lld.%06ld, "
-	    "duration %lld.%06ld, bit/s %g\n",
+	snprintf(status_line, sizeof(status_line),
+	    "%s: syscalls %lu, packets %lu, "
+	    "frame %lu, payload %lu, ip %lu, ether %lu, "
+	    "begin %lld.%06ld, end %lld.%06ld, "
+	    "duration %lld.%06ld, bit/s %g",
 	    action, syscall, packet, frame, paylen, iplen, etherlen,
 	    (long long)begin->tv_sec, begin->tv_usec,
 	    (long long)end->tv_sec, end->tv_usec,
 	    (long long)duration.tv_sec, duration.tv_usec, bits);
+}
+
+void
+status_final(const struct timeval *start, const struct timeval *stop)
+{
+	size_t len;
+
+	len = strlen(status_line);
+	if (len >= sizeof(status_line))
+		return;
+
+	snprintf(status_line + len, sizeof(status_line) - len,
+	    ", start %lld.%06ld, stop %lld.%06ld\n",
+	    (long long)start->tv_sec, start->tv_usec,
+	    (long long)stop->tv_sec, stop->tv_usec);
+	len = strlen(status_line);
+	fflush(stdout);
+	fwrite(status_line, len, 1, stdout);
+	fflush(stdout);
 }
 
 unsigned long
