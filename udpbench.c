@@ -242,7 +242,8 @@ main(int argc, char *argv[])
 		udp_connect_send(&start, &stop);
 	else
 		udp_bind_receive(&start, &stop);
-	status_final(&start, &stop);
+	if (timerisset(&stop))
+		status_final(&start, &stop);
 
 	return 0;
 }
@@ -286,6 +287,8 @@ udp_connect_send(struct timeval *start, struct timeval *stop)
 	udp_getsockname(udp_socket, localaddr, localport);
 	if (repeat > 0) {
 		udp_socket_fork(&udp_socket, getpeername, connect);
+		if (gettimeofday(start, NULL) == -1)
+			err(1, "gettimeofday start");
 		if (udp_socket_wait(udp_socket, ssh_pid, ssh_stream))
 			return;
 	}
@@ -347,6 +350,8 @@ udp_bind_receive(struct timeval *start, struct timeval *stop)
 	}
 	if (repeat > 0) {
 		udp_socket_fork(&udp_socket, getsockname, bind);
+		if (gettimeofday(start, NULL) == -1)
+			err(1, "gettimeofday start");
 	}
 	if ((repeat == 0 || udp_socket == -1) && remotessh != NULL) {
 		char remoteaddr[NI_MAXHOST], remoteport[NI_MAXSERV];
