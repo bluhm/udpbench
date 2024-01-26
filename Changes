@@ -1,6 +1,9 @@
 Revision history for udpbench udp network benchmarking tool.
 
-1.09
+1.09 2024-01-27
+  * Improve printing status line and explain it in man page.
+  * Measure final packet after receive timeout.
+  * Send and receive empty packet before initial delay.
 
 1.08 2023-07-07
   * Repeat count is limited to 256.
