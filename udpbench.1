@@ -198,12 +198,79 @@ idle time.
 If the receive timeout happens earlier, the measurement is incomplete.
 Increase
 .Fl t Ar timeout .
+.It "send: syscalls 812635, packets 812635, frame 1, payload 1452, ip 1500, ether 1538, begin 1706272739.464771, end 1706272749.464692, duration 9.999921, bit/s 9.99874e+08, start 1706272738.464447, stop 1706272749.464716"
+.Pp
+Summary of
+.Nm
+sending side.
+.Bl -tag -width 8
+.It syscalls
+Number of
+.Xr send 2
+or
+.Xr sendmmsg 2
+system calls made.
+.It packets
+Number of packets sent.
+.It frame
+Number of ethernet frames for each packet.
+.It payload
+Bytes in the UDP payload.
+.It ip
+Length of IP packet.
+.It ether
+Length of ethernet frame.
+.It begin
+Time stamp when the first packet with payload was sent.
+If
+.Fl d Ar delay
+is set, this is after the sleeping delay.
+.It end
+Time stamp after the final packet was sent.
+.It duration
+Time between begin and end.
+.It bit/s
+Bits of all packets in ethernet size during duration per second.
+.It start
+Time stamp after socket is connected.
+.It stop
+Time stamp before socket is closed.
+.El
+.It "recv: syscalls 374484, packets 374431, frame 1, payload 1452, ip 1500, ether 1538, begin 1706272739.464876, end 1706272749.473193, duration 10.008317, bit/s 4.60317e+08, start 1706272738.024436, stop 1706272754.024705"
+.Pp
+Summary of
+.Nm
+receiving side, only difference to send is explained.
+.Bl -tag -width 8
+.It syscalls
+Number of
+.Xr recv 2
+or
+.Xr recvmmsg 2
+system calls made.
+.It packets
+Number of packets received.
+.It begin
+Time stamp when the first packet with payload was received.
+If
+.Fl d Ar delay
+is set, this is after the empty packet starting the delay.
+.It end
+Time stamp after the final packet was received.
+If
+.Fl i Ar idle
+is set, end is the time before idle timed out.
+.It start
+Time stamp after socket is bound.
+.El
 .El
 .Sh SEE ALSO
-.Xr iperf3 1 ,
 .Xr tcpbench 1
 .Sh AUTHORS
 The
 .Nm
 program was written by
 .An Alexander Bluhm Aq Mt bluhm@genua.de .
+.Sh BUGS
+The number of ethernet frames and their size is calculated.
+With vlan or jumbo it will be wrong.
