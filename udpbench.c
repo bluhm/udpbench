@@ -48,7 +48,7 @@ long packetrate;
 char status_line[1024];
 
 void	udp_connect_send(struct timeval *, struct timeval *);
-void	udp_bind_receive(struct timeval *, struct timeval *);
+void	udp_bind_receive(struct timeval *, struct timeval *, struct timeval *);
 void	udp_socket_fork(int *,
 	    int(*)(int, struct sockaddr *, socklen_t *),
 	    int(*)(int, const struct sockaddr *, socklen_t));
@@ -60,7 +60,7 @@ void	udp_getsockname(int, char *, char *);
 void	udp_setbuffersize(int, int, int);
 void	udp_setrouteralert(int);
 void	udp_send(int, int, unsigned long);
-void	udp_receive(int, int);
+void	udp_receive(int, int, struct timeval *);
 
 struct mmsghdr	*mmsg_alloc(int, size_t, int);
 void		 mmsg_free(struct mmsghdr *);
@@ -109,7 +109,7 @@ int
 main(int argc, char *argv[])
 {
 	struct sigaction act;
-	struct timeval start, stop;
+	struct timeval start, stop, final;
 	const char *errstr;
 	int ch;
 
@@ -238,12 +238,20 @@ main(int argc, char *argv[])
 	if (sigaction(SIGALRM, &act, NULL) == -1)
 		err(1, "sigaction");
 
+	timerclear(&start);
+	timerclear(&stop);
+	timerclear(&final);
 	if (sendmode)
 		udp_connect_send(&start, &stop);
 	else
-		udp_bind_receive(&start, &stop);
-	if (timerisset(&stop))
+		udp_bind_receive(&start, &stop, &final);
+	if (timerisset(&stop)) {
 		status_final(&start, &stop);
+		if (!sendmode && idle && final.tv_sec < idle) {
+			errx(1, "not enough idle time: %lld.%06ld",
+			    (long long)final.tv_sec, final.tv_usec);
+		}
+	}
 
 	return 0;
 }
@@ -330,7 +338,8 @@ udp_connect_send(struct timeval *start, struct timeval *stop)
 }
 
 void
-udp_bind_receive(struct timeval *start, struct timeval *stop)
+udp_bind_receive(struct timeval *start, struct timeval *stop,
+    struct timeval *final)
 {
 	const char *localhost, *localserv;
 	char localaddr[NI_MAXHOST], localport[NI_MAXSERV];
@@ -376,7 +385,7 @@ udp_bind_receive(struct timeval *start, struct timeval *stop)
 		udp_setbuffersize(udp_socket, SO_RCVBUF, buffersize);
 	if (timeout > 0)
 		alarm(timeout + delay + idle + 1);
-	udp_receive(udp_socket, udp_family);
+	udp_receive(udp_socket, udp_family, final);
 	if (gettimeofday(stop, NULL) == -1)
 		err(1, "gettimeofday stop");
 	if (close(udp_socket) == -1)
@@ -771,9 +780,9 @@ udp_send(int udp_socket, int udp_family, unsigned long sendrate)
 }
 
 void
-udp_receive(int udp_socket, int udp_family)
+udp_receive(int udp_socket, int udp_family, struct timeval *final)
 {
-	struct timeval begin, final, end, timeo;
+	struct timeval begin, end, timeo;
 	unsigned long syscall, packet;
 	unsigned long headerlen, paylen;
 	long bored;
@@ -827,7 +836,7 @@ udp_receive(int udp_socket, int udp_family)
 	if (gettimeofday(&begin, NULL) == -1)
 		err(1, "gettimeofday begin");
 
-	timerclear(&final);
+	timerclear(final);
 	timerclear(&timeo);
 	timeo.tv_usec = 100000;
 	len = sizeof(timeo);
@@ -847,10 +856,10 @@ udp_receive(int udp_socket, int udp_family)
 			if (errno == EWOULDBLOCK) {
 				bored++;
 				if (bored == 1) {
-					if (gettimeofday(&final, NULL) == -1)
+					if (gettimeofday(final, NULL) == -1)
 						err(1, "gettimeofday final");
 					/* packet was seen before timeout */
-					timersub(&final, &timeo, &final);
+					timersub(final, &timeo, final);
 				}
 				if (idle && bored * timeo.tv_usec >
 				    1000000L * idle ) {
@@ -863,28 +872,23 @@ udp_receive(int udp_socket, int udp_family)
 				continue;
 			err(1, "recv");
 		}
-		timerclear(&final);
+		timerclear(final);
 		bored = 0;
 		packet += pkts;
 	}
 
 	if (gettimeofday(&end, NULL) == -1)
 		err(1, "gettimeofday end");
-	if (timerisset(&final)) {
+	if (timerisset(final)) {
 		struct timeval tmp;
 
 		tmp = end;
 		/* last packet was seen at final time */
-		end = final;
+		end = *final;
 		/* new final is duration without packets */
-		timersub(&tmp, &final, &final);
+		timersub(&tmp, final, final);
 	}
 	status_init("recv", syscall, packet, paylen, udp_family, &begin, &end);
-	if (idle && final.tv_sec < idle) {
-		printf("%s\n", status_line);
-		errx(1, "not enough idle time: %lld.%06ld",
-		    (long long)final.tv_sec, final.tv_usec);
-	}
 	if (mmsglen)
 		mmsg_free(mmsg);
 	free(payload);
