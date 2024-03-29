@@ -1,5 +1,7 @@
 Revision history for udpbench udp network benchmarking tool.
 
+1.11
+
 1.10 2024-03-29
   * Use pkgconf to build on GNU/Linux.
 
