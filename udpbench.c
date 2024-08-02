@@ -46,6 +46,7 @@ int buffersize, mmsglen, repeat;
 size_t udplength;
 long packetrate;
 char status_line[1024];
+int gif, gif6, gre, vlan;
 
 void	udp_connect_send(struct timeval *, struct timeval *);
 void	udp_bind_receive(struct timeval *, struct timeval *, struct timeval *);
@@ -69,7 +70,7 @@ void status_init(const char *, unsigned long, unsigned long, unsigned long,
     int, const struct timeval *, const struct timeval *);
 void status_final(const struct timeval *, const struct timeval *);
 unsigned long udp2iplength(unsigned long, int, unsigned long *);
-unsigned long udp2etherlength(unsigned long , int, int);
+unsigned long udp2etherlength(unsigned long , int);
 
 pid_t	ssh_bind(FILE **, const char *, const char *);
 pid_t	ssh_connect(FILE **, const char *, const char *);
@@ -81,11 +82,12 @@ static void
 usage(void)
 {
 	fprintf(stderr, "usage: udpbench [-DH] [-B bitrate] [-b bufsize] "
-	    "[-d delay] [-i idle] [-l length] [-m mmsglen] [-N repeat] "
-	    "[-P packetrate] [-p port] [-R remoteprog] [-r remotessh] "
-	    "[-t timeout] send|recv [hostname]\n"
+	    "[-C pseudo]  [-d delay] [-i idle] [-l length] [-m mmsglen] "
+	    "[-N repeat] [-P packetrate] [-p port] [-R remoteprog] "
+	    "[-r remotessh] [-t timeout] send|recv [hostname]\n"
 	    "    -B bitrate     bits per seconds send rate\n"
 	    "    -b bufsize     set size of send or receive buffer\n"
+	    "    -C pseudo      pseudo network device changes packet length\n"
 	    "    -D             use pf divert packet for receive\n"
 	    "    -d delay       wait for setup before sending\n"
 	    "    -H             send hop-by-hop router alert option\n"
@@ -118,7 +120,8 @@ main(int argc, char *argv[])
 	if (setvbuf(stdout, NULL, _IOLBF, 0) != 0)
 		err(1, "setvbuf");
 
-	while ((ch = getopt(argc, argv, "B:b:Dd:Hi:l:m:N:P:p:R:r:t:")) != -1) {
+	while ((ch = getopt(argc, argv, "B:b:C:Dd:Hi:l:m:N:P:p:R:r:t:"))
+	    != -1) {
 		switch (ch) {
 		case 'B':
 			bitrate = strtonum(optarg, 0, LLONG_MAX, &errstr);
@@ -131,6 +134,16 @@ main(int argc, char *argv[])
 			if (errstr != NULL)
 				errx(1, "buffer size is %s: %s",
 				    errstr, optarg);
+			break;
+		case 'C':
+			if (strcmp(optarg, "gif") == 0)
+				gif = 1;
+			if (strcmp(optarg, "gif6") == 0)
+				gif6 = 1;
+			if (strcmp(optarg, "gre") == 0)
+				gif = 1;
+			if (strcmp(optarg, "vlan") == 0)
+				vlan = 1;
 			break;
 		case 'D':
 			divert = 1;
@@ -314,7 +327,7 @@ udp_connect_send(struct timeval *start, struct timeval *stop)
 	if (bitrate) {
 		unsigned long etherlen;
 
-		etherlen = udp2etherlength(udplength, udp_family, 0);
+		etherlen = udp2etherlength(udplength, udp_family);
 		sendrate = bitrate / 8 / etherlen;
 		if (sendrate == 0)
 			errx(1, "bitrate %llu too small for ether %lu",
@@ -904,7 +917,7 @@ status_init(const char *action, unsigned long syscall, unsigned long packet,
 	double bits;
 
 	iplen = udp2iplength(paylen, af, &frame);
-	etherlen = udp2etherlength(paylen, af, 0);
+	etherlen = udp2etherlength(paylen, af);
 	bits = (double)packet * etherlen * 8;
 	timersub(end, begin, &duration);
 	bits /= (double)duration.tv_sec + (double)duration.tv_usec / 1000000;
@@ -941,14 +954,21 @@ status_final(const struct timeval *start, const struct timeval *stop)
 unsigned long
 udp2iplength(unsigned long payload, int af, unsigned long *packets)
 {
-	unsigned long iplength;
+	unsigned long iplength = 0;
 
+	/* encapsulate IP in IP */
+	if (gif)
+		iplength += 20;
+	if (gif6)
+		iplength += 40;
+	if (gre)
+		iplength += 20 + 8;
 	/* IPv4 header */
 	if (af == AF_INET)
-		iplength = 20;
+		iplength += 20;
 	/* IPv6 header */
 	if (af == AF_INET6)
-		iplength = 40;
+		iplength += 40;
 	/* UDP header, payload */
 	iplength += 8 + payload;
 
@@ -990,7 +1010,7 @@ udp2iplength(unsigned long payload, int af, unsigned long *packets)
 }
 
 unsigned long
-udp2etherlength(unsigned long payload, int af, int vlan)
+udp2etherlength(unsigned long payload, int af)
 {
 	unsigned long packetlength, fragmentlength;
 	unsigned long framelength, frames, padding;
