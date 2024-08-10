@@ -1,6 +1,13 @@
 Revision history for udpbench udp network benchmarking tool.
 
-1.11
+1.11 2024-08-11
+  * Command line option -C allows to specify a OpenBSD network
+    pseudo device that is used.  The header and packet length
+    calculation is adopted to print correct statistic values.
+  * Rework starting remote udpbench via ssh.  Pass pseudo device
+    option also to the other side.
+  * Print bit per second in statistics with %e to get consistent
+    output and proper alignment.
 
 1.10 2024-03-29
   * Use pkgconf to build on GNU/Linux.
