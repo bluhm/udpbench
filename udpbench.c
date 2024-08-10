@@ -918,7 +918,7 @@ status_init(const char *action, unsigned long syscall, unsigned long packet,
 	    "%s: syscalls %lu, packets %lu, "
 	    "frame %lu, payload %lu, ip %lu, ether %lu, "
 	    "begin %lld.%06ld, end %lld.%06ld, "
-	    "duration %lld.%06ld, bit/s %g",
+	    "duration %lld.%06ld, bit/s %e",
 	    action, syscall, packet, frame, paylen, iplen, etherlen,
 	    (long long)begin->tv_sec, begin->tv_usec,
 	    (long long)end->tv_sec, end->tv_usec,
