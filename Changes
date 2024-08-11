@@ -1,5 +1,7 @@
 Revision history for udpbench udp network benchmarking tool.
 
+1.12
+
 1.11 2024-08-11
   * Command line option -C allows to specify a OpenBSD network
     pseudo device that is used.  The header and packet length
