@@ -39,7 +39,7 @@
 sig_atomic_t alarm_signaled;
 
 const char *progname, *hostname, *service = "12345", *remotessh;
-int divert, hopbyhop, sendmode;
+int divert, hopbyhop, sendmode, dowrite;
 int delay, idle = 1, timeout = 1;
 long long bitrate;
 int buffersize, mmsglen, repeat;
@@ -81,7 +81,7 @@ void	ssh_wait(pid_t, FILE *);
 static void
 usage(void)
 {
-	fprintf(stderr, "usage: udpbench [-DH] [-B bitrate] [-b bufsize] "
+	fprintf(stderr, "usage: udpbench [-DHw] [-B bitrate] [-b bufsize] "
 	    "[-C pseudo]  [-d delay] [-i idle] [-l length] [-m mmsglen] "
 	    "[-N repeat] [-P packetrate] [-p port] [-R remoteprog] "
 	    "[-r remotessh] [-t timeout] send|recv [hostname]\n"
@@ -101,6 +101,7 @@ usage(void)
 	    "    -R remoteprog  path of udpbench tool on remote side\n"
 	    "    -r remotessh   ssh host to start udpbench on remote side\n"
 	    "    -t timeout     send duration or receive timeout, default 1\n"
+	    "    -w             use write(2) instead of send(2)\n"
 	    "    send|recv      send or receive mode for local side\n"
 	    "    hostname       address of receiving side\n"
 	    );
@@ -120,7 +121,7 @@ main(int argc, char *argv[])
 	if (setvbuf(stdout, NULL, _IOLBF, 0) != 0)
 		err(1, "setvbuf");
 
-	while ((ch = getopt(argc, argv, "B:b:C:Dd:Hi:l:m:N:P:p:R:r:t:"))
+	while ((ch = getopt(argc, argv, "B:b:C:Dd:Hi:l:m:N:P:p:R:r:t:w"))
 	    != -1) {
 		switch (ch) {
 		case 'B':
@@ -195,6 +196,9 @@ main(int argc, char *argv[])
 				errx(1, "timeout is %s: %s",
 				    errstr, optarg);
 			break;
+		case 'w':
+			dowrite = 1;
+			break;
 		default:
 			usage();
 		}
@@ -222,6 +226,8 @@ main(int argc, char *argv[])
 
 	if (bitrate && packetrate)
 		errx(1, "either bitrate or packetrate may be given");
+	if (mmsglen && dowrite)
+		errx(1, "either mmsglen or write may be used");
 
 #ifdef __OpenBSD__
 	if (sendmode && hopbyhop) {
@@ -744,6 +750,8 @@ udp_send(int udp_socket, int udp_family, unsigned long sendrate)
 		syscall++;
 		if (mmsglen)
 			pkts = sendmmsg(udp_socket, mmsg, mmsglen, 0);
+		else if(dowrite)
+			sndlen = write(udp_socket, payload, udplen);
 		else
 			sndlen = send(udp_socket, payload, udplen, 0);
 		if (pkts == -1 || sndlen == -1) {
