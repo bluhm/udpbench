@@ -19,6 +19,7 @@
 #include <sys/socket.h>
 #include <sys/wait.h>
 
+#include <arpa/inet.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/ip6.h>
@@ -39,24 +40,27 @@
 sig_atomic_t alarm_signaled;
 
 const char *progname, *hostname, *service = "12345", *remotessh;
-int divert, hopbyhop, sendmode;
+int divert, hopbyhop, sendmode, mcastloop = -1, mcastttl = -1;
 int delay, idle = 1, timeout = 1;
 long long bitrate;
 int buffersize, mmsglen, repeat;
 size_t udplength;
 long packetrate;
 char status_line[1024];
-const char *pseudo = "none";
+const char *pseudo = "none", *mcastifaddr = "none";
 
 void	udp_connect_send(struct timeval *, struct timeval *);
 void	udp_bind_receive(struct timeval *, struct timeval *, struct timeval *);
 void	udp_socket_fork(int *,
 	    int(*)(int, struct sockaddr *, socklen_t *),
-	    int(*)(int, const struct sockaddr *, socklen_t));
+	    int(*)(int, const struct sockaddr *, socklen_t),
+	    void(*)(int, const struct sockaddr_in *));
 int	udp_socket_wait(int, pid_t, FILE *);
 void	alarm_handler(int);
 int	udp_bind(int *, const char *, const char *);
 int	udp_connect(int *, const char *, const char *);
+void	multicast_membership(int, const struct sockaddr_in *);
+void	multicast_interface(int, const struct sockaddr_in *);
 void	udp_getsockname(int, char *, char *);
 void	udp_setbuffersize(int, int, int);
 void	udp_setrouteralert(int);
@@ -82,17 +86,20 @@ static void
 usage(void)
 {
 	fprintf(stderr, "usage: udpbench [-DH] [-B bitrate] [-b bufsize] "
-	    "[-C pseudo]  [-d delay] [-i idle] [-l length] [-m mmsglen] "
-	    "[-N repeat] [-P packetrate] [-p port] [-R remoteprog] "
-	    "[-r remotessh] [-t timeout] send|recv [hostname]\n"
+	    "[-C pseudo] [-d delay] [-I ifaddr] [-i idle] [-l length] "
+	    "[-m mmsglen] [-N repeat] [-P packetrate] [-p port] "
+	    "[-R remoteprog] [-r remotessh] [-t timeout] send|recv "
+	    "[hostname]\n"
 	    "    -B bitrate     bits per seconds send rate\n"
 	    "    -b bufsize     set size of send or receive buffer\n"
 	    "    -C pseudo      pseudo network device changes packet length\n"
 	    "    -D             use pf divert packet for receive\n"
 	    "    -d delay       wait for setup before sending\n"
+	    "    -I ifaddr      multicast interface IPv4 address or IPv6 name\n"
 	    "    -H             send hop-by-hop router alert option\n"
 	    "    -i idle        idle timeout before receiving stops, "
 	    "default 1\n"
+	    "    -L loop        send multicast packets to loopback\n"
 	    "    -l length      set length of udp payload\n"
 	    "    -m mmsglen     number of mmsghdr for sendmmsg or recvmmsg\n"
 	    "    -N repeat      run parallel process with incremented address\n"
@@ -100,6 +107,7 @@ usage(void)
 	    "    -p port        udp port, default 12345, random 0\n"
 	    "    -R remoteprog  path of udpbench tool on remote side\n"
 	    "    -r remotessh   ssh host to start udpbench on remote side\n"
+	    "    -T ttl         set TTL or hop count for multicast packets\n"
 	    "    -t timeout     send duration or receive timeout, default 1\n"
 	    "    send|recv      send or receive mode for local side\n"
 	    "    hostname       address of receiving side\n"
@@ -120,7 +128,7 @@ main(int argc, char *argv[])
 	if (setvbuf(stdout, NULL, _IOLBF, 0) != 0)
 		err(1, "setvbuf");
 
-	while ((ch = getopt(argc, argv, "B:b:C:Dd:Hi:l:m:N:P:p:R:r:t:"))
+	while ((ch = getopt(argc, argv, "B:b:C:Dd:HI:i:L:l:m:N:P:p:R:r:T:t:"))
 	    != -1) {
 		switch (ch) {
 		case 'B':
@@ -150,10 +158,19 @@ main(int argc, char *argv[])
 		case 'H':
 			hopbyhop = 1;
 			break;
+		case 'I':
+			mcastifaddr = optarg;
+			break;
 		case 'i':
 			idle = strtonum(optarg, 0, INT_MAX, &errstr);
 			if (errstr != NULL)
 				errx(1, "idle is %s: %s",
+				    errstr, optarg);
+			break;
+		case 'L':
+			mcastloop = strtonum(optarg, -1, 1, &errstr);
+			if (errstr != NULL)
+				errx(1, "multicast loop is %s: %s",
 				    errstr, optarg);
 			break;
 		case 'l':
@@ -188,6 +205,12 @@ main(int argc, char *argv[])
 			break;
 		case 'r':
 			remotessh = optarg;
+			break;
+		case 'T':
+			mcastttl = strtonum(optarg, -1, 1, &errstr);
+			if (errstr != NULL)
+				errx(1, "multicast ttl is %s: %s",
+				    errstr, optarg);
 			break;
 		case 't':
 			timeout = strtonum(optarg, 0, INT_MAX, &errstr);
@@ -227,13 +250,13 @@ main(int argc, char *argv[])
 	if (sendmode && hopbyhop) {
 		;
 	} else if (remotessh != NULL) {
-		if (pledge("stdio dns inet proc exec", NULL) == -1)
+		if (pledge("stdio dns inet mcast proc exec", NULL) == -1)
 			err(1, "pledge");
 	} else if (repeat) {
-		if (pledge("stdio dns inet proc", NULL) == -1)
+		if (pledge("stdio dns inet mcast proc", NULL) == -1)
 			err(1, "pledge");
 	} else {
-		if (pledge("stdio dns inet", NULL) == -1)
+		if (pledge("stdio dns inet mcast", NULL) == -1)
 			err(1, "pledge");
 	}
 #endif
@@ -282,10 +305,10 @@ udp_connect_send(struct timeval *start, struct timeval *stop)
 		if (hopbyhop) {
 			;
 		} else if (repeat) {
-			if (pledge("stdio dns inet proc", NULL) == -1)
+			if (pledge("stdio dns inet mcast proc", NULL) == -1)
 				err(1, "pledge");
 		} else {
-			if (pledge("stdio dns inet", NULL) == -1)
+			if (pledge("stdio dns inet mcast", NULL) == -1)
 				err(1, "pledge");
 		}
 #endif
@@ -300,7 +323,8 @@ udp_connect_send(struct timeval *start, struct timeval *stop)
 		err(1, "gettimeofday start");
 	udp_getsockname(udp_socket, localaddr, localport);
 	if (repeat > 0) {
-		udp_socket_fork(&udp_socket, getpeername, connect);
+		udp_socket_fork(&udp_socket, getpeername, connect,
+		    multicast_interface);
 		if (gettimeofday(start, NULL) == -1)
 			err(1, "gettimeofday start");
 		if (udp_socket_wait(udp_socket, ssh_pid, ssh_stream))
@@ -312,11 +336,11 @@ udp_connect_send(struct timeval *start, struct timeval *stop)
 		if (udp_family != AF_INET6)
 			errx(1, "hopbyhop only allowed with IPv6");
 		udp_setrouteralert(udp_socket);
-#ifdef __OpenBSD__
-		if (pledge("stdio dns inet", NULL) == -1)
-			err(1, "pledge");
-#endif
 	}
+#ifdef __OpenBSD__
+	if (pledge("stdio dns inet", NULL) == -1)
+		err(1, "pledge");
+#endif
 	if (bitrate) {
 		unsigned long etherlen;
 
@@ -364,7 +388,8 @@ udp_bind_receive(struct timeval *start, struct timeval *stop,
 		localserv = localport;
 	}
 	if (repeat > 0) {
-		udp_socket_fork(&udp_socket, getsockname, bind);
+		udp_socket_fork(&udp_socket, getsockname, bind,
+		    multicast_membership);
 		if (gettimeofday(start, NULL) == -1)
 			err(1, "gettimeofday start");
 	}
@@ -387,6 +412,10 @@ udp_bind_receive(struct timeval *start, struct timeval *stop,
 		if (udp_socket_wait(udp_socket, ssh_pid, ssh_stream))
 			return;
 	}
+#ifdef __OpenBSD__
+	if (pledge("stdio dns inet", NULL) == -1)
+		err(1, "pledge");
+#endif
 	if (buffersize)
 		udp_setbuffersize(udp_socket, SO_RCVBUF, buffersize);
 	if (timeout > 0)
@@ -403,7 +432,8 @@ udp_bind_receive(struct timeval *start, struct timeval *stop,
 void
 udp_socket_fork(int *udp_socket,
     int(*getname)(int, struct sockaddr *, socklen_t *),
-    int(*setname)(int, const struct sockaddr *, socklen_t))
+    int(*setname)(int, const struct sockaddr *, socklen_t),
+    void(*multicast)(int, const struct sockaddr_in *))
 {
 	char localaddr[NI_MAXHOST], localport[NI_MAXSERV];
 	struct sockaddr_storage ss;
@@ -434,6 +464,8 @@ udp_socket_fork(int *udp_socket,
 			case AF_INET:
 				sin = (struct sockaddr_in *)&ss;
 				((uint8_t *)&sin->sin_addr.s_addr)[3]++;
+				if (!IN_MULTICAST(ntohl(sin->sin_addr.s_addr)))
+					multicast = NULL;
 				break;
 			case AF_INET6:
 				sin6 = (struct sockaddr_in6 *)&ss;
@@ -444,6 +476,8 @@ udp_socket_fork(int *udp_socket,
 			    IPPROTO_UDP);
 			if (*udp_socket == -1)
 				err(1, "socket %d", n);
+			if (multicast)
+				multicast(*udp_socket, (struct sockaddr_in *)&ss);
 			if (setname(*udp_socket, (struct sockaddr *)&ss, sslen)
 			    == -1)
 				err(1, "setname %d", n);
@@ -535,6 +569,14 @@ udp_bind(int *udp_family, const char *host, const char *serv)
 			continue;
 		}
 
+		if (res->ai_family == AF_INET) {
+			const struct sockaddr_in *sin =
+			    (const struct sockaddr_in *)res->ai_addr;
+
+			if (IN_MULTICAST(ntohl(sin->sin_addr.s_addr)))
+				multicast_membership(udp_socket, sin);
+		}
+
 		if (divert) {
 			/* divert packet socket is bound to port only */
 			if (res->ai_family == AF_INET) {
@@ -598,6 +640,14 @@ udp_connect(int *udp_family, const char *host, const char *serv)
 			continue;
 		}
 
+		if (res->ai_family == AF_INET) {
+			const struct sockaddr_in *sin =
+			    (const struct sockaddr_in *)res->ai_addr;
+
+			if (IN_MULTICAST(ntohl(sin->sin_addr.s_addr)))
+				multicast_interface(udp_socket, sin);
+		}
+
 		if (connect(udp_socket, res->ai_addr, res->ai_addrlen) == -1) {
 			cause = "connect";
 			save_errno = errno;
@@ -614,6 +664,54 @@ udp_connect(int *udp_family, const char *host, const char *serv)
 	*udp_family = res->ai_family;
 	freeaddrinfo(res0);
 	return udp_socket;
+}
+
+void
+multicast_membership(int udp_socket, const struct sockaddr_in *sin)
+{
+	struct in_addr addr;
+	struct ip_mreq mreq;
+
+	if (strcmp(mcastifaddr, "none") == 0)
+		errx(1, "multicast send needs interface address");
+	if (inet_pton(AF_INET, mcastifaddr, &addr) == -1)
+		errx(1, "inet_pton '%s'", mcastifaddr);
+
+	mreq.imr_multiaddr = sin->sin_addr;
+	mreq.imr_interface = addr;
+	if (setsockopt(udp_socket, IPPROTO_IP, IP_ADD_MEMBERSHIP,
+	    &mreq, sizeof(mreq)) == -1) {
+		err(1, "setsockopt IP_ADD_MEMBERSHIP %s", mcastifaddr);
+	}
+}
+
+void
+multicast_interface(int udp_socket, const struct sockaddr_in *sin)
+{
+	struct in_addr addr;
+
+	if (strcmp(mcastifaddr, "none") == 0)
+		errx(1, "multicast send needs interface address");
+	if (inet_pton(AF_INET, mcastifaddr, &addr) == -1)
+		errx(1, "inet_pton ifaddr '%s'", mcastifaddr);
+
+	if (setsockopt(udp_socket, IPPROTO_IP, IP_MULTICAST_IF,
+	    &addr, sizeof(addr)) == -1)
+		err(1, "setsockopt IP_MULTICAST_IF '%s'", mcastifaddr);
+	if (mcastloop != -1) {
+		unsigned char value = mcastloop;
+
+		if (setsockopt(udp_socket, IPPROTO_IP,
+		    IP_MULTICAST_LOOP, &value, sizeof(value)) == -1)
+			err(1, "setsockopt IP_MULTICAST_LOOP %d", mcastloop);
+	}
+	if (mcastttl != -1) {
+		unsigned char value = mcastttl;
+
+		if (setsockopt(udp_socket, IPPROTO_IP,
+		    IP_MULTICAST_TTL, &value, sizeof(value)) == -1)
+			err(1, "setsockopt IP_MULTICAST_TTL %d", mcastttl);
+	}
 }
 
 void
@@ -1049,7 +1147,7 @@ udp2etherlength(unsigned long payload, int af)
 pid_t
 ssh_bind(FILE **ssh_stream, const char *host, const char *serv)
 {
-	char *argv[17];
+	char *argv[18];
 	size_t i = 0;
 	pid_t ssh_pid;
 
@@ -1063,6 +1161,8 @@ ssh_bind(FILE **ssh_stream, const char *host, const char *serv)
 		err(1, "asprintf pseudo device");
 	if (asprintf(&argv[i++], "-d%d", delay) == -1)
 		err(1, "asprintf delay");
+	if (asprintf(&argv[i++], "-I%s", mcastifaddr) == -1)
+		err(1, "asprintf mcastifaddr");
 	if (asprintf(&argv[i++], "-i%d", idle) == -1)
 		err(1, "asprintf idle");
 	if (asprintf(&argv[i++], "-l%zu", udplength) == -1)
@@ -1094,13 +1194,14 @@ ssh_bind(FILE **ssh_stream, const char *host, const char *serv)
 	free(argv[10]);
 	free(argv[11]);
 	free(argv[12]);
+	free(argv[13]);
 	return ssh_pid;
 }
 
 pid_t
 ssh_connect(FILE **ssh_stream, const char *host, const char *serv)
 {
-	char *argv[19];
+	char *argv[22];
 	size_t i = 0;
 	pid_t ssh_pid;
 
@@ -1116,8 +1217,12 @@ ssh_connect(FILE **ssh_stream, const char *host, const char *serv)
 		err(1, "asprintf pseudo device");
 	if (asprintf(&argv[i++], "-d%d", delay) == -1)
 		err(1, "asprintf delay");
+	if (asprintf(&argv[i++], "-I%s", mcastifaddr) == -1)
+		err(1, "asprintf mcastifaddr");
 	if (asprintf(&argv[i++], "-i%d", idle) == -1)
 		err(1, "asprintf idle");
+	if (asprintf(&argv[i++], "-L%d", mcastloop) == -1)
+		err(1, "asprintf mcastloop");
 	if (asprintf(&argv[i++], "-l%zu", udplength) == -1)
 		err(1, "asprintf udp length");
 	if (asprintf(&argv[i++], "-m%d", mmsglen) == -1)
@@ -1128,6 +1233,8 @@ ssh_connect(FILE **ssh_stream, const char *host, const char *serv)
 		err(1, "asprintf packet rate");
 	if (asprintf(&argv[i++], "-p%s", serv) == -1)
 		err(1, "asprintf port service");
+	if (asprintf(&argv[i++], "-T%d", mcastttl) == -1)
+		err(1, "asprintf mcastttl");
 	if (asprintf(&argv[i++], "-t%d", timeout) == -1)
 		err(1, "asprintf timeout");
 	if (hopbyhop)
@@ -1151,6 +1258,9 @@ ssh_connect(FILE **ssh_stream, const char *host, const char *serv)
 	free(argv[12]);
 	free(argv[13]);
 	free(argv[14]);
+	free(argv[15]);
+	free(argv[16]);
+	free(argv[17]);
 	return ssh_pid;
 }
 
