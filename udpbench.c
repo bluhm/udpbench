@@ -16,10 +16,12 @@
  */
 
 #include <sys/time.h>
+#include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
 
 #include <arpa/inet.h>
+#include <net/if.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/ip6.h>
@@ -54,13 +56,13 @@ void	udp_bind_receive(struct timeval *, struct timeval *, struct timeval *);
 void	udp_socket_fork(int *,
 	    int(*)(int, struct sockaddr *, socklen_t *),
 	    int(*)(int, const struct sockaddr *, socklen_t),
-	    void(*)(int, const struct sockaddr_in *));
+	    void(*)(int, const struct sockaddr *));
 int	udp_socket_wait(int, pid_t, FILE *);
 void	alarm_handler(int);
 int	udp_bind(int *, const char *, const char *);
 int	udp_connect(int *, const char *, const char *);
-void	multicast_membership(int, const struct sockaddr_in *);
-void	multicast_interface(int, const struct sockaddr_in *);
+void	multicast_membership(int, const struct sockaddr *);
+void	multicast_interface(int, const struct sockaddr *);
 void	udp_getsockname(int, char *, char *);
 void	udp_setbuffersize(int, int, int);
 void	udp_setrouteralert(int);
@@ -433,7 +435,7 @@ void
 udp_socket_fork(int *udp_socket,
     int(*getname)(int, struct sockaddr *, socklen_t *),
     int(*setname)(int, const struct sockaddr *, socklen_t),
-    void(*multicast)(int, const struct sockaddr_in *))
+    void(*multicast)(int, const struct sockaddr *))
 {
 	char localaddr[NI_MAXHOST], localport[NI_MAXSERV];
 	struct sockaddr_storage ss;
@@ -470,6 +472,8 @@ udp_socket_fork(int *udp_socket,
 			case AF_INET6:
 				sin6 = (struct sockaddr_in6 *)&ss;
 				((uint8_t *)&sin6->sin6_addr.s6_addr)[15]++;
+				if (!IN6_IS_ADDR_MULTICAST(&sin6->sin6_addr))
+					multicast = NULL;
 				break;
 			}
 			*udp_socket = socket(ss.ss_family, SOCK_DGRAM,
@@ -477,7 +481,7 @@ udp_socket_fork(int *udp_socket,
 			if (*udp_socket == -1)
 				err(1, "socket %d", n);
 			if (multicast)
-				multicast(*udp_socket, (struct sockaddr_in *)&ss);
+				multicast(*udp_socket, (struct sockaddr *)&ss);
 			if (setname(*udp_socket, (struct sockaddr *)&ss, sslen)
 			    == -1)
 				err(1, "setname %d", n);
@@ -553,6 +557,9 @@ udp_bind(int *udp_family, const char *host, const char *serv)
 		errx(1, "getaddrinfo: %s", gai_strerror(error));
 	udp_socket = -1;
 	for (res = res0; res; res = res->ai_next) {
+		struct sockaddr_in *sin;
+		struct sockaddr_in6 *sin6;
+
 		if (divert) {
 			/* pf divert packet uses raw socket */
 			res->ai_socktype = SOCK_RAW;
@@ -568,34 +575,35 @@ udp_bind(int *udp_family, const char *host, const char *serv)
 			cause = "socket";
 			continue;
 		}
-
-		if (res->ai_family == AF_INET) {
-			const struct sockaddr_in *sin =
-			    (const struct sockaddr_in *)res->ai_addr;
-
+		switch (res->ai_family) {
+		case AF_INET:
+			sin = (struct sockaddr_in *)res->ai_addr;
 			if (IN_MULTICAST(ntohl(sin->sin_addr.s_addr)))
-				multicast_membership(udp_socket, sin);
+				multicast_membership(udp_socket, res->ai_addr);
+			break;
+		case AF_INET6:
+			sin6 = (struct sockaddr_in6 *)res->ai_addr;
+			if (IN6_IS_ADDR_MULTICAST(&sin6->sin6_addr))
+				multicast_membership(udp_socket, res->ai_addr);
+			break;
 		}
-
 		if (divert) {
 			/* divert packet socket is bound to port only */
-			if (res->ai_family == AF_INET) {
-				struct sockaddr_in *sin;
-
+			switch (res->ai_family) {
+			case AF_INET:
 				sin = (struct sockaddr_in *)res->ai_addr;
 				memset(&sin->sin_addr, 0,
 				    sizeof(struct in_addr));
 				if (sin->sin_port == 0)
 					errx(1, "divert needs bind port");
-			}
-			if (res->ai_family == AF_INET) {
-				struct sockaddr_in6 *sin6;
-
+				break;
+			case AF_INET6:
 				sin6 = (struct sockaddr_in6 *)res->ai_addr;
 				memset(&sin6->sin6_addr, 0,
 				    sizeof(struct in6_addr));
 				if (sin6->sin6_port == 0)
 					errx(1, "divert needs bind port");
+				break;
 			}
 		}
 		if (bind(udp_socket, res->ai_addr, res->ai_addrlen) == -1) {
@@ -633,21 +641,27 @@ udp_connect(int *udp_family, const char *host, const char *serv)
 		errx(1, "getaddrinfo: %s", gai_strerror(error));
 	udp_socket = -1;
 	for (res = res0; res; res = res->ai_next) {
+		struct sockaddr_in *sin;
+		struct sockaddr_in6 *sin6;
+
 		udp_socket = socket(res->ai_family, res->ai_socktype,
 		    res->ai_protocol);
 		if (udp_socket == -1) {
 			cause = "socket";
 			continue;
 		}
-
-		if (res->ai_family == AF_INET) {
-			const struct sockaddr_in *sin =
-			    (const struct sockaddr_in *)res->ai_addr;
-
+		switch (res->ai_family) {
+		case AF_INET:
+			sin = (struct sockaddr_in *)res->ai_addr;
 			if (IN_MULTICAST(ntohl(sin->sin_addr.s_addr)))
-				multicast_interface(udp_socket, sin);
+				multicast_interface(udp_socket, res->ai_addr);
+			break;
+		case AF_INET6:
+			sin6 = (struct sockaddr_in6 *)res->ai_addr;
+			if (IN6_IS_ADDR_MULTICAST(&sin6->sin6_addr))
+				multicast_interface(udp_socket, res->ai_addr);
+			break;
 		}
-
 		if (connect(udp_socket, res->ai_addr, res->ai_addrlen) == -1) {
 			cause = "connect";
 			save_errno = errno;
@@ -667,50 +681,112 @@ udp_connect(int *udp_family, const char *host, const char *serv)
 }
 
 void
-multicast_membership(int udp_socket, const struct sockaddr_in *sin)
+multicast_membership(int udp_socket, const struct sockaddr *sa)
 {
+	const struct sockaddr_in *sin;
+	const struct sockaddr_in6 *sin6;
 	struct in_addr addr;
 	struct ip_mreq mreq;
+	struct ipv6_mreq mreq6;
+	unsigned int ifidx;
 
 	if (strcmp(mcastifaddr, "none") == 0)
-		errx(1, "multicast send needs interface address");
-	if (inet_pton(AF_INET, mcastifaddr, &addr) == -1)
-		errx(1, "inet_pton '%s'", mcastifaddr);
+		errx(1, "multicast recv needs interface address");
 
-	mreq.imr_multiaddr = sin->sin_addr;
-	mreq.imr_interface = addr;
-	if (setsockopt(udp_socket, IPPROTO_IP, IP_ADD_MEMBERSHIP,
-	    &mreq, sizeof(mreq)) == -1) {
-		err(1, "setsockopt IP_ADD_MEMBERSHIP %s", mcastifaddr);
+	switch (sa->sa_family) {
+	case AF_INET:
+		sin = (struct sockaddr_in *)sa;
+		if (inet_pton(AF_INET, mcastifaddr, &addr) == -1)
+			errx(1, "inet_pton '%s'", mcastifaddr);
+
+		mreq.imr_multiaddr = sin->sin_addr;
+		mreq.imr_interface = addr;
+		if (setsockopt(udp_socket, IPPROTO_IP, IP_ADD_MEMBERSHIP,
+		    &mreq, sizeof(mreq)) == -1) {
+			err(1, "setsockopt IP_ADD_MEMBERSHIP %s", mcastifaddr);
+		}
+		break;
+	case AF_INET6:
+		sin6 = (struct sockaddr_in6 *)sa;
+		ifidx = if_nametoindex(mcastifaddr);
+		if (ifidx == 0)
+			errx(1, "if_nametoindex '%s'", mcastifaddr);
+
+		mreq6.ipv6mr_multiaddr = sin6->sin6_addr;
+		mreq6.ipv6mr_interface = ifidx;
+		if (setsockopt(udp_socket, IPPROTO_IPV6, IPV6_JOIN_GROUP,
+		    &mreq6, sizeof(mreq6)) == -1) {
+			err(1, "setsockopt IPV6_JOIN_GROUP %s", mcastifaddr);
+		}
+		break;
 	}
 }
 
 void
-multicast_interface(int udp_socket, const struct sockaddr_in *sin)
+multicast_interface(int udp_socket, const struct sockaddr *sa)
 {
 	struct in_addr addr;
+	unsigned int ifidx;
 
 	if (strcmp(mcastifaddr, "none") == 0)
 		errx(1, "multicast send needs interface address");
-	if (inet_pton(AF_INET, mcastifaddr, &addr) == -1)
-		errx(1, "inet_pton ifaddr '%s'", mcastifaddr);
 
-	if (setsockopt(udp_socket, IPPROTO_IP, IP_MULTICAST_IF,
-	    &addr, sizeof(addr)) == -1)
-		err(1, "setsockopt IP_MULTICAST_IF '%s'", mcastifaddr);
-	if (mcastloop != -1) {
-		unsigned char value = mcastloop;
+	switch (sa->sa_family) {
+	case AF_INET:
+		if (inet_pton(AF_INET, mcastifaddr, &addr) == -1)
+			errx(1, "inet_pton ifaddr '%s'", mcastifaddr);
 
-		if (setsockopt(udp_socket, IPPROTO_IP,
-		    IP_MULTICAST_LOOP, &value, sizeof(value)) == -1)
-			err(1, "setsockopt IP_MULTICAST_LOOP %d", mcastloop);
-	}
-	if (mcastttl != -1) {
-		unsigned char value = mcastttl;
+		if (setsockopt(udp_socket, IPPROTO_IP, IP_MULTICAST_IF,
+		    &addr, sizeof(addr)) == -1) {
+			err(1, "setsockopt IP_MULTICAST_IF '%s'", mcastifaddr);
+		}
+		if (mcastloop != -1) {
+			unsigned char value = mcastloop;
 
-		if (setsockopt(udp_socket, IPPROTO_IP,
-		    IP_MULTICAST_TTL, &value, sizeof(value)) == -1)
-			err(1, "setsockopt IP_MULTICAST_TTL %d", mcastttl);
+			if (setsockopt(udp_socket, IPPROTO_IP,
+			    IP_MULTICAST_LOOP, &value, sizeof(value)) == -1) {
+				err(1, "setsockopt IP_MULTICAST_LOOP %d",
+				    mcastloop);
+			}
+		}
+		if (mcastttl != -1) {
+			unsigned char value = mcastttl;
+
+			if (setsockopt(udp_socket, IPPROTO_IP,
+			    IP_MULTICAST_TTL, &value, sizeof(value)) == -1) {
+				err(1, "setsockopt IP_MULTICAST_TTL %d",
+				    mcastttl);
+			}
+		}
+		break;
+	case AF_INET6:
+		ifidx = if_nametoindex(mcastifaddr);
+		if (ifidx == 0)
+			err(1, "if_nametoindex %s", mcastifaddr);
+		if (setsockopt(udp_socket, IPPROTO_IPV6, IPV6_MULTICAST_IF,
+		    &ifidx, sizeof(ifidx)) == -1)
+			err(1, "setsockopt IPV6_MULTICAST_IF %s", mcastifaddr);
+
+		if (mcastloop != -1) {
+			unsigned int value = mcastloop;
+
+			if (setsockopt(udp_socket, IPPROTO_IPV6,
+			    IPV6_MULTICAST_LOOP, &value, sizeof(value)) == -1) {
+				err(1, "setsockopt IPV6_MULTICAST_LOOP %d",
+				    mcastloop);
+			}
+		}
+		if (mcastttl != -1) {
+			unsigned int value = mcastttl;
+
+			if (setsockopt(udp_socket, IPPROTO_IPV6,
+			    IPV6_MULTICAST_HOPS, &value, sizeof(value)) == -1) {
+				err(1, "setsockopt IPV6_MULTICAST_HOPS %d",
+				    mcastttl);
+			}
+		}
+
+		break;
 	}
 }
 

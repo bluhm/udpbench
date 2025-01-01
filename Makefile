@@ -74,6 +74,17 @@ test-mcast:
 	    wait $$!
 	grep -q 'sockname: 224.0.0.123 ' out
 
+TEST += mcast6
+test-mcast6:
+	@echo '\n==== $@ ===='
+	./udpbench -Ilo0 -p0 -t3 recv ff04::123 | tee out & \
+	    sleep 1; \
+	    port=`awk '/^sockname:/{print $$3}' out`; \
+	    ./udpbench -Ilo0 -L1 -T0 -p$$port -t1 \
+	    send ff04::123 || exit 1; \
+	    wait $$!
+	grep -q 'sockname: ff04::123 ' out
+
 TEST += mcast-repeat
 test-mcast-repeat:
 	@echo '\n==== $@ ===='
@@ -85,6 +96,18 @@ test-mcast-repeat:
 	    wait $$!
 	grep -q 'sockname: 224.0.0.123 ' out
 	grep -q 'sockname: 224.0.0.124 ' out
+
+TEST += mcast6-repeat
+test-mcast6-repeat:
+	@echo '\n==== $@ ===='
+	./udpbench -N2 -Ilo0 -p0 -t3 recv ff04::123 | tee out & \
+	    sleep 1; \
+	    port=`awk '/^sockname:/{print $$3}' out | sort -u`; \
+	    ./udpbench -N2 -Ilo0 -L1 -T0 -p$$port -t1 \
+	    send ff04::123 || exit 1; \
+	    wait $$!
+	grep -q 'sockname: ff04::123 ' out
+	grep -q 'sockname: ff04::124 ' out
 
 .PHONY: ${TEST:S/^/test-/}
 test: ${TEST:S/^/test-/}
