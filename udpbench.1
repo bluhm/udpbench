@@ -27,7 +27,9 @@
 .Op Fl B Ar bitrate
 .Op Fl b Ar bufsize
 .Op Fl d Ar delay
+.Op Fl i Ar ifaddr
 .Op Fl i Ar idle
+.Op Fl L Ar loop
 .Op Fl l Ar length
 .Op Fl m Ar mmsglen
 .Op Fl N Ar repeat
@@ -35,6 +37,7 @@
 .Op Fl p Ar port
 .Op Fl R Ar remoteprog
 .Op Fl r Ar remotessh
+.Op Fl T Ar ttl
 .Op Fl t Ar timeout
 .Cm send | recv
 .Op Ar hostname
@@ -57,6 +60,11 @@ or
 when receiving.
 In the latter case it is optional, then the unspecified address is
 used.
+.Ar hostname
+may also be a multicast group.
+Then the interface has to be specified with the
+.Fl i Ar ifaddr
+option.
 .Pp
 The options are as follows:
 .Bl -tag -width Ds
@@ -91,9 +99,19 @@ An initial empty packet is sent before delay to trigger setup.
 Default is 0 seconds which disables the feature.
 .It Fl H
 Use IPv6 hop-by-hop option by adding a router alert when sending.
+.It Fl I Ar ifaddr
+If
+.Ar hostname
+is a multicast group, the interface has to be specified.
+For IPv4 this must be an interface address, while IPv6 requires the
+interface name.
 .It Fl i Ar idle
 After a period of not receiving any packets, the recv side will stop.
 Default is 1 second, 0 will ignore idle periods.
+.It Fl L Ar loop
+When sending UDP multicast, set
+.Ar loop
+to 1 to receive a copy of the packet on the loopback interface.
 .It Fl l Ar length
 Set length of the UDP payload for sending, or length of the userland
 buffer for receiving the packet.
@@ -145,6 +163,11 @@ process is started on the remote machine with the
 and
 .Cm recv
 parameter excanged.
+.It Fl T Ar ttl
+When sending UDP multicast, set
+.Ar ttl
+to specify the IPv4 time to live or IPv6 hop limit of the outgoing
+packet.
 .It Fl t Ar timeout
 Set the duration for sending packets.
 When receiving, all packets have to arrive within this timeout plus
