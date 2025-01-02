@@ -88,9 +88,9 @@ static void
 usage(void)
 {
 	fprintf(stderr, "usage: udpbench [-DH] [-B bitrate] [-b bufsize] "
-	    "[-C pseudo] [-d delay] [-I ifaddr] [-i idle] [-l length] "
+	    "[-C pseudo] [-d delay] [-I ifaddr] [-i idle] -L loop] [-l length] "
 	    "[-m mmsglen] [-N repeat] [-P packetrate] [-p port] "
-	    "[-R remoteprog] [-r remotessh] [-t timeout] send|recv "
+	    "[-R remoteprog] [-r remotessh] [-T ttl] [-t timeout] send|recv "
 	    "[hostname]\n"
 	    "    -B bitrate     bits per seconds send rate\n"
 	    "    -b bufsize     set size of send or receive buffer\n"
