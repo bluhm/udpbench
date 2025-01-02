@@ -109,7 +109,7 @@ test-mcast6-repeat:
 	grep -q 'sockname: ff04::123 ' out
 	grep -q 'sockname: ff04::124 ' out
 
-.PHONY: ${TEST:S/^/test-/}
+.PHONY: test ${TEST:S/^/test-/}
 test: ${TEST:S/^/test-/}
 
 .include <bsd.prog.mk>
