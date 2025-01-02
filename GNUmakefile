@@ -72,10 +72,10 @@ test-mcast:
 TEST += mcast6
 test-mcast6:
 	@echo -e '\n==== $@ ===='
-	./udpbench -Ilo0 -p0 -t3 recv ff04::123 | tee out & \
+	./udpbench -Ilo -p0 -t3 recv ff04::123 | tee out & \
 	    sleep 1; \
 	    port=`awk '/^sockname:/{print $$3}' out`; \
-	    ./udpbench -Ilo0 -L1 -T0 -p$$port -t1 \
+	    ./udpbench -Ilo -L1 -T0 -p$$port -t1 \
 	    send ff04::123 || exit 1; \
 	    wait $$!
 	grep -q 'sockname: ff04::123 ' out
@@ -95,10 +95,10 @@ test-mcast-repeat:
 TEST += mcast6-repeat
 test-mcast6-repeat:
 	@echo -e '\n==== $@ ===='
-	./udpbench -N2 -Ilo0 -p0 -t3 recv ff04::123 | tee out & \
+	./udpbench -N2 -Ilo -p0 -t3 recv ff04::123 | tee out & \
 	    sleep 1; \
 	    port=`awk '/^sockname:/{print $$3}' out | sort -u`; \
-	    ./udpbench -N2 -Ilo0 -L1 -T0 -p$$port -t1 \
+	    ./udpbench -N2 -Ilo -L1 -T0 -p$$port -t1 \
 	    send ff04::123 || exit 1; \
 	    wait $$!
 	grep -q 'sockname: ff04::123 ' out
