@@ -728,17 +728,16 @@ multicast_interface(int udp_socket, const struct sockaddr *sa)
 	struct in_addr addr;
 	unsigned int ifidx;
 
-	if (strcmp(mcastifaddr, "none") == 0)
-		errx(1, "multicast send needs interface address");
-
 	switch (sa->sa_family) {
 	case AF_INET:
-		if (inet_pton(AF_INET, mcastifaddr, &addr) == -1)
-			errx(1, "inet_pton ifaddr '%s'", mcastifaddr);
-
-		if (setsockopt(udp_socket, IPPROTO_IP, IP_MULTICAST_IF,
-		    &addr, sizeof(addr)) == -1) {
-			err(1, "setsockopt IP_MULTICAST_IF '%s'", mcastifaddr);
+		if (strcmp(mcastifaddr, "none") != 0) {
+			if (inet_pton(AF_INET, mcastifaddr, &addr) == -1)
+				errx(1, "inet_pton ifaddr '%s'", mcastifaddr);
+			if (setsockopt(udp_socket, IPPROTO_IP, IP_MULTICAST_IF,
+			    &addr, sizeof(addr)) == -1) {
+				err(1, "setsockopt IP_MULTICAST_IF '%s'",
+				    mcastifaddr);
+			}
 		}
 		if (mcastloop != -1) {
 			unsigned char value = mcastloop;
@@ -760,13 +759,16 @@ multicast_interface(int udp_socket, const struct sockaddr *sa)
 		}
 		break;
 	case AF_INET6:
-		ifidx = if_nametoindex(mcastifaddr);
-		if (ifidx == 0)
-			err(1, "if_nametoindex %s", mcastifaddr);
-		if (setsockopt(udp_socket, IPPROTO_IPV6, IPV6_MULTICAST_IF,
-		    &ifidx, sizeof(ifidx)) == -1)
-			err(1, "setsockopt IPV6_MULTICAST_IF %s", mcastifaddr);
-
+		if (strcmp(mcastifaddr, "none") != 0) {
+			ifidx = if_nametoindex(mcastifaddr);
+			if (ifidx == 0)
+				err(1, "if_nametoindex %s", mcastifaddr);
+			if (setsockopt(udp_socket, IPPROTO_IPV6,
+			    IPV6_MULTICAST_IF, &ifidx, sizeof(ifidx)) == -1) {
+				err(1, "setsockopt IPV6_MULTICAST_IF %s",
+				    mcastifaddr);
+			}
+		}
 		if (mcastloop != -1) {
 			unsigned int value = mcastloop;
 
