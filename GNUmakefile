@@ -70,7 +70,8 @@ test-mcast:
 	grep -q 'sockname: 224.0.0.123 ' out
 	grep -q 'recv: syscalls ' out
 
-TEST += mcast6
+# XXX Linux fails to receive on loopback, disable test for now.
+#TEST += mcast6
 test-mcast6:
 	@echo -e '\n==== $@ ===='
 	./udpbench -Ilo -p0 -t3 recv ff04::123 | tee out & \
@@ -95,7 +96,8 @@ test-mcast-repeat:
 	grep -q 'sockname: 224.0.0.124 ' out
 	grep -q 'recv: syscalls ' out
 
-TEST += mcast6-repeat
+# XXX Linux fails to receive on loopback, disable test for now.
+#TEST += mcast6-repeat
 test-mcast6-repeat:
 	@echo -e '\n==== $@ ===='
 	./udpbench -N2 -Ilo -p0 -t3 recv ff04::123 | tee out & \
