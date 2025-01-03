@@ -69,15 +69,13 @@ test-mcast:
 	    wait $$!
 	grep -q 'sockname: 224.0.0.123 ' out
 
-# XXX Linux fails with: udpbench send: connect: Network is unreachable
-# disable test for now
-#TEST += mcast6
+TEST += mcast6
 test-mcast6:
 	@echo -e '\n==== $@ ===='
 	./udpbench -Ilo -p0 -t3 recv ff04::123 | tee out & \
 	    sleep 1; \
 	    port=`awk '/^sockname:/{print $$3}' out`; \
-	    ./udpbench -Ilo -L1 -T0 -p$$port -t1 \
+	    ./udpbench -L1 -T0 -p$$port -t1 \
 	    send ff04::123 || exit 1; \
 	    wait $$!
 	grep -q 'sockname: ff04::123 ' out
@@ -94,15 +92,13 @@ test-mcast-repeat:
 	grep -q 'sockname: 224.0.0.123 ' out
 	grep -q 'sockname: 224.0.0.124 ' out
 
-# XXX Linux fails with: udpbench send: connect: Network is unreachable
-# disable test for now
-#TEST += mcast6-repeat
+TEST += mcast6-repeat
 test-mcast6-repeat:
 	@echo -e '\n==== $@ ===='
 	./udpbench -N2 -Ilo -p0 -t3 recv ff04::123 | tee out & \
 	    sleep 1; \
 	    port=`awk '/^sockname:/{print $$3}' out | sort -u`; \
-	    ./udpbench -N2 -Ilo -L1 -T0 -p$$port -t1 \
+	    ./udpbench -N2 -L1 -T0 -p$$port -t1 \
 	    send ff04::123 || exit 1; \
 	    wait $$!
 	grep -q 'sockname: ff04::123 ' out
