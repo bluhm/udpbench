@@ -26,7 +26,7 @@ test-localhost:
 	    port=`awk '/^sockname:/{print $$3}' out`; \
 	    ./udpbench -p$$port -t1 send 127.0.0.1 || exit 1; \
 	    wait $$!
-	grep '^recv:' out
+	grep -q 'recv: syscalls ' out
 
 TEST += localhost6
 test-localhost6:
@@ -36,7 +36,7 @@ test-localhost6:
 	    port=`awk '/^sockname:/{print $$3}' out`; \
 	    ./udpbench -p$$port -t1 send ::1 || exit 1; \
 	    wait $$!
-	grep '^recv:' out
+	grep -q 'recv: syscalls ' out
 
 TEST += mmsg
 test-mmsg:
@@ -46,7 +46,7 @@ test-mmsg:
 	    port=`awk '/^sockname:/{print $$3}' out`; \
 	    ./udpbench -m1024 -p$$port -t1 send 127.0.0.1 || exit 1; \
 	    wait $$!
-	grep '^recv:' out
+	grep -q 'recv: syscalls ' out
 
 TEST += repeat
 test-repeat:
@@ -56,7 +56,7 @@ test-repeat:
 	    port=`awk '/^sockname:/{print $$3}' out`; \
 	    ./udpbench -N1 -p$$port -t1 send 127.0.0.1 || exit 1; \
 	    wait $$!
-	grep '^recv:' out
+	grep -q 'recv: syscalls ' out
 
 TEST += mcast
 test-mcast:
@@ -68,6 +68,7 @@ test-mcast:
 	    send 224.0.0.123 || exit 1; \
 	    wait $$!
 	grep -q 'sockname: 224.0.0.123 ' out
+	grep -q 'recv: syscalls ' out
 
 TEST += mcast6
 test-mcast6:
@@ -79,6 +80,7 @@ test-mcast6:
 	    send ff04::123 || exit 1; \
 	    wait $$!
 	grep -q 'sockname: ff04::123 ' out
+	grep -q 'recv: syscalls ' out
 
 TEST += mcast-repeat
 test-mcast-repeat:
@@ -91,6 +93,7 @@ test-mcast-repeat:
 	    wait $$!
 	grep -q 'sockname: 224.0.0.123 ' out
 	grep -q 'sockname: 224.0.0.124 ' out
+	grep -q 'recv: syscalls ' out
 
 TEST += mcast6-repeat
 test-mcast6-repeat:
@@ -103,6 +106,7 @@ test-mcast6-repeat:
 	    wait $$!
 	grep -q 'sockname: ff04::123 ' out
 	grep -q 'sockname: ff04::124 ' out
+	grep -q 'recv: syscalls ' out
 
 .PHONY: test $(patsubst %,test-%,$(TEST))
 test: $(patsubst %,test-%,$(TEST))
