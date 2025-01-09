@@ -18,8 +18,8 @@ install:
 	install -c -m 444 udpbench.1 -D -t ${DESTDIR}${MANDIR}1
 
 # use any multicast capable interface; as -L1 is set, test runs on loopback
-INTERFACE =	$(shell ip link show | \
-    awk '/MULTICAST/{sub(":.*","",$$2); print $$2; exit}')
+INTERFACE =	$(shell ip route get ff04::123 | \
+    sed 's/^.* dev \([a-z][a-z0-9]*\) .*$$/\1/')
 
 TEST =
 TEST += localhost
