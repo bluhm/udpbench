@@ -1,6 +1,10 @@
 Revision history for udpbench udp network benchmarking tool.
 
-1.12
+1.12 2025-01-09
+  * Implement sending and receiving IPv4 and IPv6 UDP multicast
+    packets.  Note that using -r remotessh together with multicast
+    usually does not work as interface address and name are different
+    on remote machine.
 
 1.11 2024-08-11
   * Command line option -C allows to specify a OpenBSD network
