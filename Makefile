@@ -3,7 +3,7 @@ WARNINGS=	yes
 BINDIR?=	/usr/local/bin
 MANDIR?=        /usr/local/man/man
 
-VERSION=	1.12
+VERSION=	1.13
 CLEANFILES=	udpbench-${VERSION}.tar.gz*
 
 .PHONY: dist udpbench-${VERSION}.tar.gz
