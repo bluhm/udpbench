@@ -27,7 +27,7 @@
 .Op Fl B Ar bitrate
 .Op Fl b Ar bufsize
 .Op Fl d Ar delay
-.Op Fl i Ar ifaddr
+.Op Fl I Ar ifaddr
 .Op Fl i Ar idle
 .Op Fl L Ar loop
 .Op Fl l Ar length
@@ -295,6 +295,14 @@ The
 .Nm
 program was written by
 .An Alexander Bluhm Aq Mt bluhm@genua.de .
+.Sh CAVEATS
+Using
+.Fl r Ar remotessh
+together with multicast groups usually does not work.
+The interface address and name
+are different on the remote machine, but
+.Fl I Ar ifaddr
+affects both local and remote.
 .Sh BUGS
 The number of ethernet frames and their size is calculated.
 With vlan or jumbo it will be wrong.
