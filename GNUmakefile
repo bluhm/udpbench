@@ -19,7 +19,7 @@ install:
 
 # use any multicast capable interface; as -L1 is set, test runs on loopback
 INTERFACE =	$(shell ip link show | \
-    awk '/MULTICAST/{print gensub(":.*","",1,$$2); exit}')
+    awk '/MULTICAST/{sub(":.*","",$$2); print $$2; exit}')
 
 TEST =
 TEST += localhost
