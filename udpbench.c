@@ -42,7 +42,7 @@
 sig_atomic_t alarm_signaled;
 
 const char *progname, *hostname, *service = "12345", *remotessh;
-int divert, hopbyhop, sendmode, mcastloop = -1, mcastttl = -1, dowrite;
+int divert, hopbyhop, sendmode, mcastloop = -1, mcastttl = -1, dowrite, gro;
 int delay, idle = 1, timeout = 1;
 long long bitrate;
 int buffersize, mmsglen, repeat;
@@ -65,6 +65,9 @@ void	multicast_membership(int, const struct sockaddr *);
 void	multicast_interface(int, const struct sockaddr *);
 void	udp_getsockname(int, char *, char *);
 void	udp_setbuffersize(int, int, int);
+#if defined(__linux__) && defined(UDP_GRO)
+void	udp_setgro(int);
+#endif
 void	udp_setrouteralert(int);
 void	udp_send(int, int, unsigned long);
 void	udp_receive(int, int, struct timeval *);
@@ -97,6 +100,9 @@ usage(void)
 	    "    -C pseudo      pseudo network device changes packet length\n"
 	    "    -D             use pf divert packet for receive\n"
 	    "    -d delay       wait for setup before sending\n"
+#if defined(__linux__) && defined(UDP_GRO)
+	    "    -G             use GRO (generic receive offload), needs -m\n"
+#endif
 	    "    -H             send hop-by-hop router alert option\n"
 	    "    -I ifaddr      multicast interface IPv4 address or IPv6 name\n"
 	    "    -i idle        idle timeout before receive stops, default 1\n"
@@ -130,7 +136,7 @@ main(int argc, char *argv[])
 	if (setvbuf(stdout, NULL, _IOLBF, 0) != 0)
 		err(1, "setvbuf");
 
-	while ((ch = getopt(argc, argv, "B:b:C:Dd:HI:i:L:l:m:N:P:p:R:r:T:t:w"))
+	while ((ch = getopt(argc, argv, "B:b:C:Dd:GHI:i:L:l:m:N:P:p:R:r:T:t:w"))
 	    != -1) {
 		switch (ch) {
 		case 'B':
@@ -157,6 +163,11 @@ main(int argc, char *argv[])
 				errx(1, "delay is %s: %s",
 				    errstr, optarg);
 			break;
+#if defined(__linux__) && defined(UDP_GRO)
+		case 'G':
+			gro = 1;
+			break;
+#endif
 		case 'H':
 			hopbyhop = 1;
 			break;
@@ -252,6 +263,12 @@ main(int argc, char *argv[])
 		errx(1, "either bitrate or packetrate may be given");
 	if (mmsglen && dowrite)
 		errx(1, "either mmsglen or write may be used");
+#if defined(__linux__) && defined(UDP_GRO)
+	if (udplength == 0 && gro)
+		errx(1, "GRO does not work with 0 payload");
+	if (mmsglen == 0 && gro)
+		errx(1, "GRO only works with a mmsglen");
+#endif
 
 #ifdef __OpenBSD__
 	if (sendmode && hopbyhop) {
@@ -824,8 +841,20 @@ udp_setbuffersize(int udp_socket, int name, int size)
 	len = sizeof(size);
 	if (setsockopt(udp_socket, SOL_SOCKET, name, &size, len) == -1)
 		err(1, "setsockopt buffer size %d", size);
-
 }
+
+#if defined(__linux__) && defined(UDP_GRO)
+void
+udp_setgro(int udp_socket)
+{
+	int on = 1;
+	socklen_t len;
+
+	len = sizeof(on);
+	if (setsockopt(udp_socket, IPPROTO_UDP, UDP_GRO, &on, len) == -1)
+		err(1, "setsockopt gro");
+}
+#endif
 
 void
 udp_setrouteralert(int udp_socket)
@@ -856,6 +885,11 @@ mmsg_alloc(int packets, size_t paylen, int fill)
 	struct mmsghdr *mmsg, *mhdr;
 	struct iovec *iov;
 	char *payload;
+
+#if defined(__linux__) && defined(UDP_GRO)
+	if (!fill && gro)
+		paylen = IP_MAXPACKET;
+#endif
 
 	if ((mmsg = calloc(packets, sizeof(struct mmsghdr))) == NULL)
 		err(1, "calloc mmsghdr");
@@ -978,6 +1012,9 @@ udp_receive(int udp_socket, int udp_family, struct timeval *final)
 	struct mmsghdr *mmsg;
 	char *payload;
 	size_t udplen;
+#if defined(__linux__) && defined(UDP_GRO)
+	size_t total_received_payload = 0;
+#endif
 	ssize_t rcvlen;
 	socklen_t len;
 	int pkts;
@@ -1022,6 +1059,12 @@ udp_receive(int udp_socket, int udp_family, struct timeval *final)
 		paylen -= headerlen;
 	}
 
+#if defined(__linux__) && defined(UDP_GRO)
+	/* enabling GRO earlier does not work with getting rcvlen */
+	if (gro)
+		udp_setgro(udp_socket);
+#endif
+
 	if (gettimeofday(&begin, NULL) == -1)
 		err(1, "gettimeofday begin");
 
@@ -1064,6 +1107,13 @@ udp_receive(int udp_socket, int udp_family, struct timeval *final)
 		timerclear(final);
 		bored = 0;
 		packet += pkts;
+#if defined(__linux__) && defined(UDP_GRO)
+		if (gro) {
+			int i;
+			for (i = 0; i < pkts; i++)
+				total_received_payload += mmsg[i].msg_len;
+		}
+#endif
 	}
 
 	if (gettimeofday(&end, NULL) == -1)
@@ -1077,6 +1127,11 @@ udp_receive(int udp_socket, int udp_family, struct timeval *final)
 		/* new final is duration without packets */
 		timersub(&tmp, final, final);
 	}
+#if defined(__linux__) && defined(UDP_GRO)
+	/* XXX: assume that all msgs will be of size rcvlen */
+	if (gro)
+		packet = total_received_payload / rcvlen;
+#endif
 	status_init("recv", syscall, packet, paylen, udp_family, &begin, &end);
 	if (mmsglen)
 		mmsg_free(mmsg);
@@ -1286,7 +1341,7 @@ ssh_bind(FILE **ssh_stream, const char *host, const char *serv)
 pid_t
 ssh_connect(FILE **ssh_stream, const char *host, const char *serv)
 {
-	char *argv[22];
+	char *argv[23];
 	size_t i = 0;
 	pid_t ssh_pid;
 
@@ -1322,6 +1377,10 @@ ssh_connect(FILE **ssh_stream, const char *host, const char *serv)
 		err(1, "asprintf mcastttl");
 	if (asprintf(&argv[i++], "-t%d", timeout) == -1)
 		err(1, "asprintf timeout");
+#if defined(__linux__) && defined(UDP_GRO)
+	if (gro)
+		argv[i++] = "-G";
+#endif
 	if (hopbyhop)
 		argv[i++] = "-H";
 	argv[i++] = "send";
