@@ -915,7 +915,7 @@ mmsg_alloc(int packets, size_t paylen, int fill)
 #if defined(__linux__) && (defined(UDP_GRO) || defined(UDP_SEGMENT))
 	if (segment) {
 		if (fill) {
-			if ((IP_MAXPACKET / paylen) >= 126) 
+			if (IP_MAXPACKET / paylen >= 126) 
 				paylen = 125 * paylen;
 			else
 				paylen = (IP_MAXPACKET / paylen) * paylen;
@@ -1032,8 +1032,12 @@ udp_send(int udp_socket, int udp_family, unsigned long sendrate)
 			err(1, "send");
 		}
 #if defined(__linux__) && defined(UDP_SEGMENT)
-		if (segment)
-			pkts *= (IP_MAXPACKET / udplen);
+		if (segment) {
+			if (IP_MAXPACKET / udplen >= 126)
+				pkts *= 125;
+			else
+				pkts *= IP_MAXPACKET / udplen;
+		}
 #endif
 		packet += pkts;
 		if (sendrate) {
