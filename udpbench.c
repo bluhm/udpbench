@@ -70,6 +70,7 @@ void	udp_getsockname(int, char *, char *);
 void	udp_setbuffersize(int, int, int);
 #if defined(__linux__) && defined(UDP_GRO)
 void	udp_setgro(int);
+int	getgro_size(struct msghdr *);
 #endif
 void	udp_setrouteralert(int);
 void	udp_send(int, int, unsigned long);
@@ -857,6 +858,22 @@ udp_setgro(int udp_socket)
 	if (setsockopt(udp_socket, IPPROTO_UDP, UDP_GRO, &on, len) == -1)
 		err(1, "setsockopt gro");
 }
+
+int
+getgro_size(struct msghdr *msg)
+{
+	struct cmsghdr *cmsg;
+	int pktsz = 0;
+
+	for(cmsg = CMSG_FIRSTHDR(msg); cmsg; cmsg = CMSG_NXTHDR(msg, cmsg)) {
+		if(cmsg->cmsg_level == SOL_UDP && cmsg->cmsg_type == UDP_GRO) {
+			memcpy(&pktsz, CMSG_DATA(cmsg), sizeof(pktsz));
+			break;
+		}
+	}
+
+	return pktsz;
+}
 #endif
 
 void
@@ -1153,14 +1170,32 @@ udp_receive(int udp_socket, int udp_family, struct timeval *final)
 		}
 		timerclear(final);
 		bored = 0;
-		packet += pkts;
 #if defined(__linux__) && defined(UDP_GRO)
 		if (segment) {
-			int i;
-			for (i = 0; i < pkts; i++)
+			int i, packet_size;
+			for (i = 0; i < pkts; i++) {
 				total_received_payload += mmsg[i].msg_len;
+				packet_size = getgro_size(&mmsg[i].msg_hdr);
+				if (packet_size == 0) {
+#if 1
+					printf("gro fail for %d, using %u\n",
+					    i, mmsg[i].msg_len);
+#endif
+					packet_size = rcvlen;
+#if 1
+				} else {
+					printf("gro works for %d: %d\n", i,
+					    packet_size);
+#endif
+				}
+				packet += mmsg[i].msg_len / packet_size;
+				if (mmsg[i].msg_len % packet_size != 0)
+					packet++;
+			}
+			pkts = 0;
 		}
 #endif
+		packet += pkts;
 	}
 
 	if (gettimeofday(&end, NULL) == -1)
@@ -1175,9 +1210,9 @@ udp_receive(int udp_socket, int udp_family, struct timeval *final)
 		timersub(&tmp, final, final);
 	}
 #if defined(__linux__) && defined(UDP_GRO)
-	/* XXX: assume that all msgs will be of size rcvlen */
 	if (segment)
-		packet = total_received_payload / rcvlen;
+		printf("packet from UDP_GRO=%lu, tot_rcvd/rcvlen=%lu\n",
+		    packet, total_received_payload / rcvlen);
 #endif
 	status_init("recv", syscall, packet, paylen, udp_family, &begin, &end);
 	if (mmsglen)
