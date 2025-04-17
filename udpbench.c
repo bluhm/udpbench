@@ -916,9 +916,9 @@ mmsg_alloc(int packets, size_t paylen, int fill)
 	if (segment) {
 		if (fill) {
 			if (IP_MAXPACKET / paylen >= 126) 
-				paylen = 125 * paylen;
+				paylen *= 125;
 			else
-				paylen = (IP_MAXPACKET / paylen) * paylen;
+				paylen *= IP_MAXPACKET / paylen;
 		} else
 			paylen = IP_MAXPACKET;
 	}
