@@ -905,14 +905,12 @@ mmsg_alloc(int packets, size_t paylen, int fill)
 	struct mmsghdr *mmsg, *mhdr;
 	struct iovec *iov;
 	char *payload;
-#if defined(__linux__) && defined(UDP_SEGMENT)
+#if defined(__linux__) && (defined(UDP_GRO) || defined(UDP_SEGMENT))
 	char *cmsgs;
 	struct cmsghdr *cmsg;
 	size_t cmsg_size;
 	uint16_t gso_size = paylen & 0xffff;
-#endif
 
-#if defined(__linux__) && (defined(UDP_GRO) || defined(UDP_SEGMENT))
 	if (segment) {
 		if (fill) {
 			if (IP_MAXPACKET / paylen >= 126) 
@@ -952,7 +950,7 @@ mmsg_alloc(int packets, size_t paylen, int fill)
 		mhdr->msg_hdr.msg_iovlen = 1;
 		iov->iov_base = payload;
 		iov->iov_len = paylen;
-#if defined(__linux__) && defined(UDP_SEGMENT)
+#if defined(__linux__) && (defined (UDP_GRO) || defined(UDP_SEGMENT))
 		if (segment) {
 			mhdr->msg_hdr.msg_control = cmsgs;
 			mhdr->msg_hdr.msg_controllen = cmsg_size;
