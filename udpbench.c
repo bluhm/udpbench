@@ -42,7 +42,10 @@
 sig_atomic_t alarm_signaled;
 
 const char *progname, *hostname, *service = "12345", *remotessh;
-int divert, hopbyhop, sendmode, mcastloop = -1, mcastttl = -1, dowrite, gro;
+int divert, hopbyhop, sendmode, mcastloop = -1, mcastttl = -1, dowrite;
+#if defined(__linux__) && defined(UDP_GRO) && defined(UDP_SEGMENT)
+int segment;
+#endif
 int delay, idle = 1, timeout = 1;
 long long bitrate;
 int buffersize, mmsglen, repeat;
@@ -101,7 +104,7 @@ usage(void)
 	    "    -D             use pf divert packet for receive\n"
 	    "    -d delay       wait for setup before sending\n"
 #if defined(__linux__) && defined(UDP_GRO)
-	    "    -G             use GRO (generic receive offload), needs -m\n"
+	    "    -G             use UDP segmentation offloading, needs -m\n"
 #endif
 	    "    -H             send hop-by-hop router alert option\n"
 	    "    -I ifaddr      multicast interface IPv4 address or IPv6 name\n"
@@ -163,9 +166,9 @@ main(int argc, char *argv[])
 				errx(1, "delay is %s: %s",
 				    errstr, optarg);
 			break;
-#if defined(__linux__) && defined(UDP_GRO)
+#if defined(__linux__) && defined(UDP_GRO) && defined(UDP_SEGMENT)
 		case 'G':
-			gro = 1;
+			segment = 1;
 			break;
 #endif
 		case 'H':
@@ -264,10 +267,10 @@ main(int argc, char *argv[])
 	if (mmsglen && dowrite)
 		errx(1, "either mmsglen or write may be used");
 #if defined(__linux__) && defined(UDP_GRO)
-	if (udplength == 0 && gro)
-		errx(1, "GRO does not work with 0 payload");
-	if (mmsglen == 0 && gro)
-		errx(1, "GRO only works with a mmsglen");
+	if (udplength == 0 && segment)
+		errx(1, "UDP segmentation offload needs a payload");
+	if (mmsglen == 0 && segment)
+		errx(1, "UDP segmentation offload only works with a mmsglen");
 #endif
 
 #ifdef __OpenBSD__
@@ -885,10 +888,18 @@ mmsg_alloc(int packets, size_t paylen, int fill)
 	struct mmsghdr *mmsg, *mhdr;
 	struct iovec *iov;
 	char *payload;
-
 #if defined(__linux__) && defined(UDP_GRO)
-	if (!fill && gro)
-		paylen = IP_MAXPACKET;
+	char *cmsgs;
+	struct cmsghdr *cmsg;
+	size_t cmsg_size;
+	uint16_t gso_size = paylen & 0xffff;
+
+	if (segment) {
+		if (fill)
+		    paylen = (IP_MAXPACKET / paylen) * paylen;
+		else
+		    paylen = IP_MAXPACKET;
+	}
 #endif
 
 	if ((mmsg = calloc(packets, sizeof(struct mmsghdr))) == NULL)
@@ -902,12 +913,39 @@ mmsg_alloc(int packets, size_t paylen, int fill)
 	if (fill)
 		arc4random_buf(payload, packets * paylen);
 
+#if defined(__linux__) && defined(UDP_GRO) && defined(UDP_SEGMENT)
+	if (segment) {
+		if (fill)
+			cmsg_size = CMSG_SPACE(sizeof(uint16_t));
+		else 
+			cmsg_size = CMSG_SPACE(sizeof(int));
+		if ((cmsgs = calloc(packets, cmsg_size)) == NULL)
+		    err(1, "calloc cmsgs");
+	}
+#endif
+
 	mhdr = mmsg;
 	while (packets > 0) {
 		mhdr->msg_hdr.msg_iov = iov;
 		mhdr->msg_hdr.msg_iovlen = 1;
 		iov->iov_base = payload;
 		iov->iov_len = paylen;
+#if defined(__linux__) && defined(UDP_GRO) && defined(UDP_SEGMENT)
+		if (segment) {
+			mhdr->msg_hdr.msg_control = cmsgs;
+			mhdr->msg_hdr.msg_controllen = cmsg_size;
+			if (fill) {
+				cmsg = CMSG_FIRSTHDR(&mhdr->msg_hdr);
+				cmsg->cmsg_level = SOL_UDP;
+				cmsg->cmsg_type = UDP_SEGMENT;
+				cmsg->cmsg_len = CMSG_LEN(sizeof(uint16_t));
+				memcpy(CMSG_DATA(cmsg), &gso_size,
+				    sizeof(gso_size));
+			}
+
+			cmsgs += cmsg_size;
+		}
+#endif
 
 		mhdr++;
 		iov++;
@@ -923,6 +961,9 @@ mmsg_free(struct mmsghdr *mmsg)
 {
 	free(mmsg->msg_hdr.msg_iov->iov_base);
 	free(mmsg->msg_hdr.msg_iov);
+#if defined(__linux__) && defined(UDP_GRO) && defined(UDP_SEGMENT)
+	free(mmsg->msg_hdr.msg_control);
+#endif
 	free(mmsg);
 }
 
@@ -968,6 +1009,10 @@ udp_send(int udp_socket, int udp_family, unsigned long sendrate)
 				continue;
 			err(1, "send");
 		}
+#if defined(__linux__) && defined(UDP_GRO) && defined(UDP_SEGMENT)
+		if (segment)
+			pkts *= (IP_MAXPACKET / udplen);
+#endif
 		packet += pkts;
 		if (sendrate) {
 			double expectduration, waittime;
@@ -1061,7 +1106,7 @@ udp_receive(int udp_socket, int udp_family, struct timeval *final)
 
 #if defined(__linux__) && defined(UDP_GRO)
 	/* enabling GRO earlier does not work with getting rcvlen */
-	if (gro)
+	if (segment)
 		udp_setgro(udp_socket);
 #endif
 
@@ -1108,7 +1153,7 @@ udp_receive(int udp_socket, int udp_family, struct timeval *final)
 		bored = 0;
 		packet += pkts;
 #if defined(__linux__) && defined(UDP_GRO)
-		if (gro) {
+		if (segment) {
 			int i;
 			for (i = 0; i < pkts; i++)
 				total_received_payload += mmsg[i].msg_len;
@@ -1129,7 +1174,7 @@ udp_receive(int udp_socket, int udp_family, struct timeval *final)
 	}
 #if defined(__linux__) && defined(UDP_GRO)
 	/* XXX: assume that all msgs will be of size rcvlen */
-	if (gro)
+	if (segment)
 		packet = total_received_payload / rcvlen;
 #endif
 	status_init("recv", syscall, packet, paylen, udp_family, &begin, &end);
@@ -1378,7 +1423,7 @@ ssh_connect(FILE **ssh_stream, const char *host, const char *serv)
 	if (asprintf(&argv[i++], "-t%d", timeout) == -1)
 		err(1, "asprintf timeout");
 #if defined(__linux__) && defined(UDP_GRO)
-	if (gro)
+	if (segment)
 		argv[i++] = "-G";
 #endif
 	if (hopbyhop)
