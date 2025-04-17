@@ -43,7 +43,7 @@ sig_atomic_t alarm_signaled;
 
 const char *progname, *hostname, *service = "12345", *remotessh;
 int divert, hopbyhop, sendmode, mcastloop = -1, mcastttl = -1, dowrite;
-#if defined(__linux__) && defined(UDP_GRO) && defined(UDP_SEGMENT)
+#if defined(__linux__) && (defined(UDP_GRO) || defined(UDP_SEGMENT))
 int segment;
 #endif
 int delay, idle = 1, timeout = 1;
@@ -103,7 +103,7 @@ usage(void)
 	    "    -C pseudo      pseudo network device changes packet length\n"
 	    "    -D             use pf divert packet for receive\n"
 	    "    -d delay       wait for setup before sending\n"
-#if defined(__linux__) && defined(UDP_GRO)
+#if defined(__linux__) && (defined(UDP_GRO) || defined(UDP_SEGMENT))
 	    "    -G             use UDP segmentation offloading, needs -m\n"
 #endif
 	    "    -H             send hop-by-hop router alert option\n"
@@ -166,7 +166,7 @@ main(int argc, char *argv[])
 				errx(1, "delay is %s: %s",
 				    errstr, optarg);
 			break;
-#if defined(__linux__) && defined(UDP_GRO) && defined(UDP_SEGMENT)
+#if defined(__linux__) && (defined(UDP_GRO) || defined(UDP_SEGMENT))
 		case 'G':
 			segment = 1;
 			break;
@@ -266,7 +266,7 @@ main(int argc, char *argv[])
 		errx(1, "either bitrate or packetrate may be given");
 	if (mmsglen && dowrite)
 		errx(1, "either mmsglen or write may be used");
-#if defined(__linux__) && defined(UDP_GRO)
+#if defined(__linux__) && (defined(UDP_GRO) || defined(UDP_SEGMENT))
 	if (udplength == 0 && segment)
 		errx(1, "UDP segmentation offload needs a payload");
 	if (mmsglen == 0 && segment)
@@ -888,7 +888,7 @@ mmsg_alloc(int packets, size_t paylen, int fill)
 	struct mmsghdr *mmsg, *mhdr;
 	struct iovec *iov;
 	char *payload;
-#if defined(__linux__) && defined(UDP_GRO)
+#if defined(__linux__) && defined(UDP_SEGMENT)
 	char *cmsgs;
 	struct cmsghdr *cmsg;
 	size_t cmsg_size;
@@ -913,7 +913,7 @@ mmsg_alloc(int packets, size_t paylen, int fill)
 	if (fill)
 		arc4random_buf(payload, packets * paylen);
 
-#if defined(__linux__) && defined(UDP_GRO) && defined(UDP_SEGMENT)
+#if defined(__linux__) && defined(UDP_SEGMENT)
 	if (segment) {
 		if (fill)
 			cmsg_size = CMSG_SPACE(sizeof(uint16_t));
@@ -930,7 +930,7 @@ mmsg_alloc(int packets, size_t paylen, int fill)
 		mhdr->msg_hdr.msg_iovlen = 1;
 		iov->iov_base = payload;
 		iov->iov_len = paylen;
-#if defined(__linux__) && defined(UDP_GRO) && defined(UDP_SEGMENT)
+#if defined(__linux__) && defined(UDP_SEGMENT)
 		if (segment) {
 			mhdr->msg_hdr.msg_control = cmsgs;
 			mhdr->msg_hdr.msg_controllen = cmsg_size;
@@ -961,7 +961,7 @@ mmsg_free(struct mmsghdr *mmsg)
 {
 	free(mmsg->msg_hdr.msg_iov->iov_base);
 	free(mmsg->msg_hdr.msg_iov);
-#if defined(__linux__) && defined(UDP_GRO) && defined(UDP_SEGMENT)
+#if defined(__linux__) && defined(UDP_SEGMENT)
 	free(mmsg->msg_hdr.msg_control);
 #endif
 	free(mmsg);
@@ -1009,7 +1009,7 @@ udp_send(int udp_socket, int udp_family, unsigned long sendrate)
 				continue;
 			err(1, "send");
 		}
-#if defined(__linux__) && defined(UDP_GRO) && defined(UDP_SEGMENT)
+#if defined(__linux__) && defined(UDP_SEGMENT)
 		if (segment)
 			pkts *= (IP_MAXPACKET / udplen);
 #endif
@@ -1422,7 +1422,7 @@ ssh_connect(FILE **ssh_stream, const char *host, const char *serv)
 		err(1, "asprintf mcastttl");
 	if (asprintf(&argv[i++], "-t%d", timeout) == -1)
 		err(1, "asprintf timeout");
-#if defined(__linux__) && defined(UDP_GRO)
+#if defined(__linux__) && (defined(UDP_GRO) || defined(UDP_SEGMENT))
 	if (segment)
 		argv[i++] = "-G";
 #endif
