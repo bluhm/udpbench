@@ -893,7 +893,9 @@ mmsg_alloc(int packets, size_t paylen, int fill)
 	struct cmsghdr *cmsg;
 	size_t cmsg_size;
 	uint16_t gso_size = paylen & 0xffff;
+#endif
 
+#if defined(__linux__) && (defined(UDP_GRO) || defined(UDP_SEGMENT))
 	if (segment) {
 		if (fill)
 		    paylen = (IP_MAXPACKET / paylen) * paylen;
