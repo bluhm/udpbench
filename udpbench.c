@@ -935,7 +935,7 @@ mmsg_alloc(int packets, size_t paylen, int fill)
 	if (fill)
 		arc4random_buf(payload, packets * paylen);
 
-#if defined(__linux__) && defined(UDP_SEGMENT)
+#if defined(__linux__) && (defined (UDP_GRO) || defined(UDP_SEGMENT))
 	if (segment) {
 		if (fill)
 			cmsg_size = CMSG_SPACE(sizeof(uint16_t));
@@ -983,7 +983,7 @@ mmsg_free(struct mmsghdr *mmsg)
 {
 	free(mmsg->msg_hdr.msg_iov->iov_base);
 	free(mmsg->msg_hdr.msg_iov);
-#if defined(__linux__) && defined(UDP_SEGMENT)
+#if defined(__linux__) && (defined(UDP_GRO) || defined(UDP_SEGMENT))
 	free(mmsg->msg_hdr.msg_control);
 #endif
 	free(mmsg);
