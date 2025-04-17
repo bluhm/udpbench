@@ -914,10 +914,13 @@ mmsg_alloc(int packets, size_t paylen, int fill)
 
 #if defined(__linux__) && (defined(UDP_GRO) || defined(UDP_SEGMENT))
 	if (segment) {
-		if (fill)
-		    paylen = (IP_MAXPACKET / paylen) * paylen;
-		else
-		    paylen = IP_MAXPACKET;
+		if (fill) {
+			if ((IP_MAXPACKET / paylen) >= 126) 
+				paylen = 125 * paylen;
+			else
+				paylen = (IP_MAXPACKET / paylen) * paylen;
+		} else
+			paylen = IP_MAXPACKET;
 	}
 #endif
 
@@ -1178,8 +1181,9 @@ udp_receive(int udp_socket, int udp_family, struct timeval *final)
 				packet_size = getgro_size(&mmsg[i].msg_hdr);
 				if (packet_size == 0) {
 #if 1
-					printf("gro fail for %d, using %u\n",
-					    i, mmsg[i].msg_len);
+					printf("gro fail for %d, using %zu, "
+					    "msg_len=%d\n", i, rcvlen,
+					    mmsg[i].msg_len);
 #endif
 					packet_size = rcvlen;
 #if 1
