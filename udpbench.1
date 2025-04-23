@@ -46,7 +46,7 @@
 The
 .Nm
 benchmark tool sends or receives UDP packets between two IP end points.
-It measures the thoughput on both sides.
+It measures the throughput on both sides.
 The local action has to be given as
 .Cm send
 or
@@ -71,7 +71,7 @@ The options are as follows:
 .It Fl B Ar bitrate
 The value specifies the number of bits to send over the wire within
 a second.
-The size of the ethernet frame is calculaed from UDP payload length.
+The size of the ethernet frame is calculated from UDP payload length.
 This adds a small delay between
 .Xr send 2
 system calls if packets would be generated too fast otherwise.
@@ -126,7 +126,7 @@ Default is to use
 .Xr recv 2
 and
 .Xr send 2 .
-This can be explicity enforced by setting
+This can be explicitly enforced by setting
 .Ar mmsglen
 to 0.
 .It Fl N Ar repeat
@@ -162,7 +162,7 @@ process is started on the remote machine with the
 .Cm send
 and
 .Cm recv
-parameter excanged.
+parameter exchanged.
 .It Fl T Ar ttl
 When sending UDP multicast, set
 .Ar ttl
