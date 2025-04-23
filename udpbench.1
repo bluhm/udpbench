@@ -168,6 +168,10 @@ When sending UDP multicast, set
 .Ar ttl
 to specify the IPv4 time to live or IPv6 hop limit of the outgoing
 packet.
+The default kernel multicast ttl value is 1 and 255 maximum.
+Reset a previous
+.Ar ttl
+option to default with -1.
 .It Fl t Ar timeout
 Set the duration for sending packets.
 When receiving, all packets have to arrive within this timeout plus
