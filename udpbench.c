@@ -208,7 +208,7 @@ main(int argc, char *argv[])
 			remotessh = optarg;
 			break;
 		case 'T':
-			mcastttl = strtonum(optarg, -1, 1, &errstr);
+			mcastttl = strtonum(optarg, -1, 255, &errstr);
 			if (errstr != NULL)
 				errx(1, "multicast ttl is %s: %s",
 				    errstr, optarg);
