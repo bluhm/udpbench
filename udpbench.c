@@ -913,7 +913,7 @@ mmsg_alloc(int packets, size_t paylen, int fill)
 
 	if (segment) {
 		if (fill) {
-			if (IP_MAXPACKET / paylen >= 126) 
+			if (IP_MAXPACKET / paylen >= 126)
 				paylen *= 125;
 			else
 				paylen *= IP_MAXPACKET / paylen;
@@ -937,7 +937,7 @@ mmsg_alloc(int packets, size_t paylen, int fill)
 	if (segment) {
 		if (fill)
 			cmsg_size = CMSG_SPACE(sizeof(uint16_t));
-		else 
+		else
 			cmsg_size = CMSG_SPACE(sizeof(int));
 		if ((cmsgs = calloc(packets, cmsg_size)) == NULL)
 		    err(1, "calloc cmsgs");
