@@ -23,7 +23,7 @@
 .Sh SYNOPSIS
 .Nm
 .Bk -words
-.Op Fl DH
+.Op Fl DHw
 .Op Fl B Ar bitrate
 .Op Fl b Ar bufsize
 .Op Fl d Ar delay
@@ -178,6 +178,13 @@ When receiving, all packets have to arrive within this timeout plus
 two seconds.
 Disable timeout with 0 and run forever.
 Default is 1 second.
+.It Fl w
+Use
+.Xr write 2
+instead of
+.Xr send 2
+system call.
+They may have different throughput on some systems.
 .El
 .Sh EXAMPLES
 Receive UDP packets on any address and port 12345.

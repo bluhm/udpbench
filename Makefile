@@ -113,6 +113,11 @@ test-mcast6-repeat:
 	grep -q 'sockname: ff04::124 ' out
 	grep -q 'recv: syscalls ' out
 
+TEST += mandoc
+test-mandoc:
+	@echo '\n==== $@ ===='
+	mandoc -Tlint ${.CURDIR}/udpbench.1
+
 .PHONY: test ${TEST:S/^/test-/}
 test: ${TEST:S/^/test-/}
 
