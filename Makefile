@@ -113,6 +113,16 @@ test-mcast6-repeat:
 	grep -q 'sockname: ff04::124 ' out
 	grep -q 'recv: syscalls ' out
 
+TEST += write
+test-write:
+	@echo '\n==== $@ ===='
+	./udpbench -p0 -t3 recv 127.0.0.1 | tee out & \
+	    sleep 1; \
+	    port=`awk '/^sockname:/{print $$3}' out`; \
+	    ./udpbench -p$$port -t1 -w send 127.0.0.1 || exit 1; \
+	    wait $$!
+	grep -q 'recv: syscalls ' out
+
 TEST += mandoc
 test-mandoc:
 	@echo '\n==== $@ ===='
