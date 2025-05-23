@@ -110,7 +110,7 @@ usage(void)
 	    "    -r remotessh   ssh host to start udpbench on remote side\n"
 	    "    -T ttl         set TTL or hop count for multicast packets\n"
 	    "    -t timeout     send duration or receive timeout, default 1\n"
-	    "    -w             use write(2) instead of send(2)\n"
+	    "    -w             use write instead of send system call\n"
 	    "    send|recv      send or receive mode for local side\n"
 	    "    hostname       address of receiving side\n"
 	    );
