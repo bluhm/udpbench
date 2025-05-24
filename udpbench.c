@@ -1182,17 +1182,7 @@ udp_receive(int udp_socket, int udp_family, struct timeval *final)
 				total_received_payload += mmsg[i].msg_len;
 				packet_size = getgro_size(&mmsg[i].msg_hdr);
 				if (packet_size == 0) {
-#if 1
-					printf("gro fail for %d, using %zu, "
-					    "msg_len=%d\n", i, rcvlen,
-					    mmsg[i].msg_len);
-#endif
 					packet_size = rcvlen;
-#if 1
-				} else {
-					printf("gro works for %d: %d\n", i,
-					    packet_size);
-#endif
 				}
 				packet += mmsg[i].msg_len / packet_size;
 				if (mmsg[i].msg_len % packet_size != 0)
