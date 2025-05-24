@@ -127,10 +127,10 @@ test-write:
 TEST += gro
 test-gro:
 	@echo -e '\n==== $@ ===='
-	./udpbench -p0 -G -t3 recv 127.0.0.1 >out & \
+	./udpbench -p0 -l1470 -G -m1 -t3 recv 127.0.0.1 >out & \
 	    sleep 1; \
 	    port=`awk '/^sockname:/{print $$3}' out`; \
-	    ./udpbench -p$$port -t1 -G -m1 send 127.0.0.1 || exit 1; \
+	    ./udpbench -p$$port -t1 -l1470 -G -m1 send 127.0.0.1 || exit 1; \
 	    wait $$!
 
 .PHONY: test $(patsubst %,test-%,$(TEST))
