@@ -1375,7 +1375,7 @@ udp2etherlength(unsigned long payload, int af)
 pid_t
 ssh_bind(FILE **ssh_stream, const char *host, const char *serv)
 {
-	char *argv[18];
+	char *argv[19];
 	size_t i = 0;
 	pid_t ssh_pid;
 
@@ -1405,6 +1405,10 @@ ssh_bind(FILE **ssh_stream, const char *host, const char *serv)
 		err(1, "asprintf timeout");
 	if (divert)
 		argv[i++] = "-D";
+#if defined(__linux__) && (defined(UDP_GRO) || defined(UDP_SEGMENT))
+	if (segment)
+		argv[i++] = "-G";
+#endif
 	argv[i++] = "recv";
 	argv[i++] = (char *)host;
 	argv[i++] = NULL;
