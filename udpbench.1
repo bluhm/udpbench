@@ -100,15 +100,15 @@ An initial empty packet is sent before delay to trigger setup.
 Default is 0 seconds which disables the feature.
 .It Fl G
 Use UDP send and receive offload.
-This requires setting 
+This requires setting
 .Fl m Ar mmsglen
 and
 .Fl l Ar length
 greater than 0.
 This option is only available on systems that define
 .Dv UDP_SEGMENT
-and 
-.Dv UDP_GSO.
+and
+.Dv UDP_GSO .
 .It Fl H
 Use IPv6 hop-by-hop option by adding a router alert when sending.
 .It Fl I Ar ifaddr
