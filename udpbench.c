@@ -42,7 +42,7 @@
 sig_atomic_t alarm_signaled;
 
 const char *progname, *hostname, *service = "12345", *remotessh;
-int divert, hopbyhop, sendmode, mcastloop = -1, mcastttl = -1, dowrite;
+int divert, hopbyhop, sendmode, mcastloop = -1, mcastttl = -1, readwrite;
 #if defined(__linux__) && (defined(UDP_GRO) || defined(UDP_SEGMENT))
 int segment;
 #endif
@@ -120,7 +120,7 @@ usage(void)
 	    "    -r remotessh   ssh host to start udpbench on remote side\n"
 	    "    -T ttl         set TTL or hop count for multicast packets\n"
 	    "    -t timeout     send duration or receive timeout, default 1\n"
-	    "    -w             use write instead of send system call\n"
+	    "    -w             use read and write instead of recv and send\n"
 	    "    send|recv      send or receive mode for local side\n"
 	    "    hostname       address of receiving side\n"
 	    );
@@ -236,7 +236,7 @@ main(int argc, char *argv[])
 				    errstr, optarg);
 			break;
 		case 'w':
-			dowrite = 1;
+			readwrite = 1;
 			break;
 		default:
 			usage();
@@ -265,7 +265,7 @@ main(int argc, char *argv[])
 
 	if (bitrate && packetrate)
 		errx(1, "either bitrate or packetrate may be given");
-	if (mmsglen && dowrite)
+	if (mmsglen && readwrite)
 		errx(1, "either mmsglen or write may be used");
 #if defined(__linux__) && (defined(UDP_GRO) || defined(UDP_SEGMENT))
 	if (udplength == 0 && segment)
@@ -1020,7 +1020,7 @@ udp_send(int udp_socket, int udp_family, unsigned long sendrate)
 		syscall++;
 		if (mmsglen)
 			pkts = sendmmsg(udp_socket, mmsg, mmsglen, 0);
-		else if(dowrite)
+		else if(readwrite)
 			sndlen = write(udp_socket, payload, udplen);
 		else
 			sndlen = send(udp_socket, payload, udplen, 0);
@@ -1151,6 +1151,8 @@ udp_receive(int udp_socket, int udp_family, struct timeval *final)
 		syscall++;
 		if (mmsglen)
 			pkts = recvmmsg(udp_socket, mmsg, mmsglen, 0, NULL);
+		else if(readwrite)
+			rcvlen = read(udp_socket, payload, udplen + 1);
 		else
 			rcvlen = recv(udp_socket, payload, udplen + 1, 0);
 		if (pkts == -1 || rcvlen == -1) {
