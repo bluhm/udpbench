@@ -27,6 +27,7 @@
 .Op Fl DGHw
 .Op Fl B Ar bitrate
 .Op Fl b Ar bufsize
+.Op Fl C Ar pseudo
 .Op Fl d Ar delay
 .Op Fl I Ar ifaddr
 .Op Fl i Ar idle
@@ -78,6 +79,9 @@ This adds a small delay between
 system calls if packets would be generated too fast otherwise.
 .It Fl b Ar bufsize
 Set size of send or receive socket buffer.
+.It Fl C Ar pseudo
+Account for the given pseudo interface type when calculating payload
+sizes.
 .It Fl D
 .Ox
 .Xr pf 4
