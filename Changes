@@ -1,6 +1,10 @@
 Revision history for udpbench udp network benchmarking tool.
 
-1.13
+1.13 2026-01-03
+  * Fix multicast TTL option parsing.
+  * Allow to test read(2) and write(2) system call.
+  * On Linux the -G option enables Generic Receive Offload (GRO).
+  * Several man page corrections.
 
 1.12 2025-01-09
   * Implement sending and receiving IPv4 and IPv6 UDP multicast
