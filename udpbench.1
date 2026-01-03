@@ -1,6 +1,6 @@
 .\" $OpenBSD$
 .\"
-.\" Copyright (c) 2022-2025 Alexander Bluhm <bluhm@genua.de>
+.\" Copyright (c) 2022-2026 Alexander Bluhm <bluhm@genua.de>
 .\" Copyright (c) 2025 Moritz Buhl <mbuhl@mbuhl.me>
 .\"
 .\" Permission to use, copy, modify, and distribute this software for any
@@ -304,7 +304,8 @@ receiving side, only difference to send is explained.
 .Bl -tag -width 8
 .It syscalls
 Number of
-.Xr recv 2
+.Xr recv 2 ,
+.Xr read 2 ,
 or
 .Xr recvmmsg 2
 system calls made.
