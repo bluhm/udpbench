@@ -1,6 +1,7 @@
 Revision history for udpbench udp network benchmarking tool.
 
-1.14
+1.14 2026-10-23
+  * Switch GNU build from pkgconf to pkg-config.
 
 1.13 2026-01-03
   * Fix multicast TTL option parsing.
